@@ -80,23 +80,20 @@ function kp(pose: poseDetection.Pose, name: string) {
 }
 
 function checkFrontPose(pose: poseDetection.Pose, videoW: number, videoH: number): CheckResult {
-  const names = [
-    "left_shoulder",
-    "right_shoulder",
-    "left_hip",
-    "right_hip",
-    "left_ankle",
-    "right_ankle",
-    "left_wrist",
-    "right_wrist",
-  ];
-  const points = Object.fromEntries(names.map((n) => [n, kp(pose, n)]));
-  const missing = names.filter((n) => !points[n] || (points[n]!.score ?? 0) < MIN_SCORE);
-  if (missing.length > 1) {
+  // Only the "frame" keypoints (shoulders/hips/ankles) gate the generic
+  // "corpo inteiro visível" message. Wrists are checked separately below so
+  // that arms tucked at the sides — which MoveNet often can't confidently
+  // locate — get the actionable "afaste os braços" message instead of a
+  // generic one that never changes no matter how the person moves.
+  const frameNames = ["left_shoulder", "right_shoulder", "left_hip", "right_hip", "left_ankle", "right_ankle"];
+  const framePoints = Object.fromEntries(frameNames.map((n) => [n, kp(pose, n)]));
+  const frameMissing = frameNames.filter((n) => !framePoints[n] || (framePoints[n]!.score ?? 0) < MIN_SCORE);
+  if (frameMissing.length > 0) {
     return { ok: false, message: "Fique com o corpo inteiro visível, de frente pra câmera." };
   }
 
-  const { left_shoulder: lS, right_shoulder: rS, left_hip: lH, right_hip: rH, left_ankle: lA, right_ankle: rA, left_wrist: lW, right_wrist: rW } = points as Record<string, poseDetection.Keypoint>;
+  const { left_shoulder: lS, right_shoulder: rS, left_hip: lH, right_hip: rH, left_ankle: lA, right_ankle: rA } =
+    framePoints as Record<string, poseDetection.Keypoint>;
 
   const topY = Math.min(lS.y, rS.y);
   const bottomY = Math.max(lA.y, rA.y);
@@ -105,9 +102,12 @@ function checkFrontPose(pose: poseDetection.Pose, videoW: number, videoH: number
   if (frameRatio > 0.95) return { ok: false, message: "Afaste-se um pouco da câmera." };
 
   const shoulderWidth = Math.abs(rS.x - lS.x);
-  const armSpreadL = Math.abs(lW.x - lH.x);
-  const armSpreadR = Math.abs(rW.x - rH.x);
-  if (armSpreadL < shoulderWidth * 0.35 || armSpreadR < shoulderWidth * 0.35) {
+
+  const lW = kp(pose, "left_wrist");
+  const rW = kp(pose, "right_wrist");
+  const armSpread = (wrist: poseDetection.Keypoint | undefined, hip: poseDetection.Keypoint) =>
+    !!wrist && (wrist.score ?? 0) >= MIN_SCORE && Math.abs(wrist.x - hip.x) >= shoulderWidth * 0.35;
+  if (!armSpread(lW, lH) || !armSpread(rW, rH)) {
     return { ok: false, message: "Afaste os braços do corpo, como na foto de exemplo." };
   }
 
@@ -362,7 +362,7 @@ export function GuidedCamera({
         </button>
       </div>
 
-      <div className="flex items-center justify-end gap-4">
+      <div className="flex items-center justify-center">
         <button
           type="button"
           onClick={capture}

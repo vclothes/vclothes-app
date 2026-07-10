@@ -228,7 +228,11 @@ function InstructionsScreen({
       <Button onClick={onNext} className="mt-8 w-full">
         Próximo
       </Button>
-      <button type="button" onClick={onBack} className="mt-4 text-sm text-muted-foreground hover:underline">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
+      >
         {backLabel}
       </button>
     </div>
@@ -371,7 +375,7 @@ function Provador() {
             <button
               type="button"
               onClick={() => setStep("front-instructions")}
-              className="mt-6 text-sm text-muted-foreground hover:underline"
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
               Ver instruções de novo
             </button>
@@ -414,7 +418,7 @@ function Provador() {
             <button
               type="button"
               onClick={() => setStep("side-instructions")}
-              className="mt-6 text-sm text-muted-foreground hover:underline"
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
               Ver instruções de novo
             </button>
