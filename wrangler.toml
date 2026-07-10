@@ -1,0 +1,6 @@
+name = "vclothes-app"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "VCLOTHES_SCANS"
+id = "fac23b6b73494495a4dcfd53655a75d7"
