@@ -2,6 +2,8 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { runWithCloudflareEnv, type CloudflareEnv } from "./lib/cloudflareEnv";
+import { handleThreeDLookWebhook } from "./lib/threeDLookWebhook";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -39,16 +41,28 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
-    } catch (error) {
-      console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    }
+    const cfEnv = env as CloudflareEnv;
+
+    return runWithCloudflareEnv(cfEnv, async () => {
+      try {
+        // Handled directly here (not through the TanStack Start router) —
+        // it's a plain webhook receiver, not a page or a client-callable
+        // server function.
+        const url = new URL(request.url);
+        if (request.method === "POST" && url.pathname === "/api/webhook/3dlook") {
+          return await handleThreeDLookWebhook(request, cfEnv);
+        }
+
+        const handler = await getServerEntry();
+        const response = await handler.fetch(request, env, ctx);
+        return await normalizeCatastrophicSsrResponse(response);
+      } catch (error) {
+        console.error(error);
+        return new Response(renderErrorPage(), {
+          status: 500,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+    });
   },
 };
