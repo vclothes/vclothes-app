@@ -2,9 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
@@ -37,6 +35,96 @@ const MEASUREMENT_LABELS: Record<string, string> = {
 
 function isDisplayableMeasurement(key: string, value: unknown): value is number {
   return key in MEASUREMENT_LABELS && typeof value === "number";
+}
+
+function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
+  const options: { value: Gender; label: string }[] = [
+    { value: "female", label: "Feminino" },
+    { value: "male", label: "Masculino" },
+  ];
+
+  return (
+    <div role="radiogroup" aria-label="Gênero" className="grid grid-cols-2 gap-3">
+      {options.map((opt) => {
+        const selected = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(opt.value)}
+            className={`rounded-2xl border px-4 py-4 text-sm font-medium transition-all duration-200 ${
+              selected
+                ? "border-ink bg-ink text-primary-foreground shadow-[var(--shadow-card)]"
+                : "border hairline bg-card text-foreground hover:border-ink/30"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function NumberStepper({
+  label,
+  unit,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+}: {
+  label: string;
+  unit: string;
+  value: string;
+  onChange: (value: string) => void;
+  min: number;
+  max: number;
+  step?: number;
+}) {
+  const numeric = Number(value) || 0;
+
+  function nudge(delta: number) {
+    const next = Math.min(max, Math.max(min, numeric + delta));
+    onChange(String(next));
+  }
+
+  return (
+    <div>
+      <Label className="mb-3 block">{label}</Label>
+      <div className="flex items-center justify-between rounded-2xl border hairline bg-card px-3 py-2">
+        <button
+          type="button"
+          onClick={() => nudge(-step)}
+          aria-label={`Diminuir ${label.toLowerCase()}`}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-foreground transition-colors hover:bg-secondary"
+        >
+          −
+        </button>
+        <div className="flex flex-1 items-baseline justify-center gap-1.5">
+          <input
+            type="number"
+            inputMode="numeric"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-16 bg-transparent text-center text-display text-4xl text-ink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          <span className="text-mono text-muted-foreground">{unit}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => nudge(step)}
+          aria-label={`Aumentar ${label.toLowerCase()}`}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-foreground transition-colors hover:bg-secondary"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -101,8 +189,8 @@ function PhotoField({
 function Provador() {
   const [step, setStep] = useState<Step>("intro");
   const [gender, setGender] = useState<Gender>("female");
-  const [height, setHeight] = useState("");
-  const [weight, setWeight] = useState("");
+  const [height, setHeight] = useState("170");
+  const [weight, setWeight] = useState("65");
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [sideFile, setSideFile] = useState<File | null>(null);
   const [result, setResult] = useState<ScanStatus | null>(null);
@@ -178,50 +266,12 @@ function Provador() {
 
             <div className="mt-8 flex flex-col gap-6">
               <div>
-                <Label className="mb-2 block">Gênero</Label>
-                <RadioGroup value={gender} onValueChange={(v) => setGender(v as Gender)} className="flex gap-4">
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="female" id="gender-female" />
-                    <Label htmlFor="gender-female" className="text-sm font-normal text-foreground">
-                      Feminino
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="male" id="gender-male" />
-                    <Label htmlFor="gender-male" className="text-sm font-normal text-foreground">
-                      Masculino
-                    </Label>
-                  </div>
-                </RadioGroup>
+                <Label className="mb-3 block">Gênero</Label>
+                <GenderSelect value={gender} onChange={setGender} />
               </div>
 
-              <div>
-                <Label htmlFor="height" className="mb-2 block">
-                  Altura (cm)
-                </Label>
-                <Input
-                  id="height"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="Ex: 170"
-                  value={height}
-                  onChange={(e) => setHeight(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="weight" className="mb-2 block">
-                  Peso (kg)
-                </Label>
-                <Input
-                  id="weight"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="Ex: 65"
-                  value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
-                />
-              </div>
+              <NumberStepper label="Altura" unit="cm" value={height} onChange={setHeight} min={120} max={220} />
+              <NumberStepper label="Peso" unit="kg" value={weight} onChange={setWeight} min={30} max={200} />
 
               <Button disabled={!canContinueFromIntro} onClick={() => setStep("capture")} className="mt-2">
                 Continuar
