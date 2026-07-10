@@ -1,0 +1,150 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ink: var(--ink);
+  --color-hairline: var(--hairline);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* Light premium canvas with cool undertone */
+  --background: oklch(0.985 0.005 240);
+  --foreground: oklch(0.18 0.02 250);
+  --ink: oklch(0.14 0.025 255);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 250);
+
+  /* Deep editorial blue */
+  --primary: oklch(0.48 0.19 258);
+  --primary-foreground: oklch(0.985 0.005 240);
+  --primary-soft: oklch(0.94 0.04 250);
+
+  --secondary: oklch(0.96 0.008 250);
+  --secondary-foreground: oklch(0.22 0.025 255);
+  --muted: oklch(0.955 0.008 250);
+  --muted-foreground: oklch(0.5 0.02 255);
+  --accent: oklch(0.92 0.05 255);
+  --accent-foreground: oklch(0.28 0.08 260);
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0.005 240);
+
+  --hairline: oklch(0.14 0.025 255 / 8%);
+  --border: oklch(0.14 0.025 255 / 10%);
+  --input: oklch(0.14 0.025 255 / 12%);
+  --ring: oklch(0.48 0.19 258);
+
+  --gradient-hero: radial-gradient(
+      120% 80% at 80% 10%,
+      oklch(0.9 0.08 250 / 0.8) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      100% 70% at 10% 90%,
+      oklch(0.92 0.04 240 / 0.6) 0%,
+      transparent 60%
+    );
+  --shadow-editorial: 0 1px 0 oklch(0.14 0.025 255 / 4%),
+    0 40px 80px -30px oklch(0.14 0.025 255 / 18%),
+    0 20px 40px -20px oklch(0.48 0.19 258 / 15%);
+  --shadow-card: 0 1px 0 oklch(0.14 0.025 255 / 4%),
+    0 10px 30px -12px oklch(0.14 0.025 255 / 10%);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+}
+
+@utility text-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+
+@utility text-mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+
+@utility hairline {
+  border-color: var(--color-hairline);
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-24px) rotate(1deg); }
+}
+@keyframes float-y-alt {
+  0%, 100% { transform: translateY(0) rotate(2deg); }
+  50% { transform: translateY(-18px) rotate(-2deg); }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-float { animation: float-y 8s ease-in-out infinite; }
+.animate-float-alt { animation: float-y-alt 10s ease-in-out infinite; }
+.animate-marquee { animation: marquee 40s linear infinite; }
