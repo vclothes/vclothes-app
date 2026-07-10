@@ -165,11 +165,9 @@ function checkSidePose(pose: poseDetection.Pose, videoW: number, videoH: number)
 export function GuidedCamera({
   mode,
   onCapture,
-  onSkip,
 }: {
   mode: PoseMode;
   onCapture: (file: File) => void;
-  onSkip: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -183,6 +181,7 @@ export function GuidedCamera({
   const [feedback, setFeedback] = useState("Carregando câmera…");
   const [poseOk, setPoseOk] = useState(false);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [retryKey, setRetryKey] = useState(0);
 
   const capture = useCallback(() => {
     const video = videoRef.current;
@@ -203,6 +202,8 @@ export function GuidedCamera({
     let cancelled = false;
 
     async function start() {
+      setStatus("loading");
+      setFeedback("Carregando câmera…");
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("unsupported");
         return;
@@ -293,7 +294,7 @@ export function GuidedCamera({
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, facingMode]);
+  }, [mode, facingMode, retryKey]);
 
   // Auto-capture once the pose has been held correctly for long enough.
   useEffect(() => {
@@ -320,12 +321,24 @@ export function GuidedCamera({
         />
 
         {status !== "ready" && (
-          <div className="absolute inset-0 flex items-center justify-center bg-ink/90 px-6 text-center text-sm text-primary-foreground">
-            {status === "loading" && "Carregando câmera…"}
-            {status === "denied" && "Não conseguimos acessar sua câmera. Verifique as permissões do navegador."}
-            {status === "unsupported" && "Seu navegador não suporta captura de câmera aqui."}
-            {status === "model-error" &&
-              "Não conseguimos carregar o assistente de posição neste dispositivo. Use a opção abaixo pra escolher da galeria."}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-ink/90 px-6 text-center text-sm text-primary-foreground">
+            <span>
+              {status === "loading" && "Carregando câmera…"}
+              {status === "denied" &&
+                "Não conseguimos acessar sua câmera. Verifique as permissões do navegador e tente de novo."}
+              {status === "unsupported" && "Seu navegador não suporta captura de câmera aqui."}
+              {status === "model-error" &&
+                "Não conseguimos carregar o assistente de posição. Verifique sua internet e tente de novo."}
+            </span>
+            {(status === "denied" || status === "model-error") && (
+              <button
+                type="button"
+                onClick={() => setRetryKey((k) => k + 1)}
+                className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
+              >
+                Tentar novamente
+              </button>
+            )}
           </div>
         )}
 
@@ -349,10 +362,7 @@ export function GuidedCamera({
         </button>
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <button type="button" onClick={onSkip} className="text-sm text-muted-foreground hover:underline">
-          Prefiro escolher da galeria
-        </button>
+      <div className="flex items-center justify-end gap-4">
         <button
           type="button"
           onClick={capture}
