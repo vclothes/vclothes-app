@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { GuidedCamera } from "@/components/GuidedCamera";
 
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
@@ -193,6 +194,8 @@ function Provador() {
   const [weight, setWeight] = useState("65");
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [sideFile, setSideFile] = useState<File | null>(null);
+  const [manualFront, setManualFront] = useState(false);
+  const [manualSide, setManualSide] = useState(false);
   const [result, setResult] = useState<ScanStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -280,41 +283,101 @@ function Provador() {
           </div>
         )}
 
-        {step === "capture" && (
+        {step === "capture" && !frontFile && (
           <div>
-            <div className="text-mono mb-2 text-primary">Passo 2 de 2</div>
-            <h1 className="text-display text-4xl text-ink">Suas fotos</h1>
-            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-              <li>Vista roupa justa ao corpo, sem casaco largo</li>
-              <li>Fique num fundo liso, bem iluminado</li>
-              <li>Fique a 3-4 passos da câmera, corpo inteiro visível</li>
-            </ul>
+            <div className="text-mono mb-2 text-primary">Passo 2 de 2 · Foto de frente</div>
+            <h1 className="text-display text-4xl text-ink">Fique como no exemplo</h1>
+            <p className="mt-3 text-muted-foreground">
+              Roupa justa, fundo liso, braços afastados do corpo em "A". A câmera avisa quando
+              estiver certo.
+            </p>
 
-            <div className="mt-8 flex flex-col gap-8">
-              <PhotoField
-                label="Foto de frente"
-                hint="De frente pra câmera, braços afastados do corpo em 'A', pernas separadas."
-                file={frontFile}
-                onChange={setFrontFile}
-              />
-              <PhotoField
-                label="Foto de perfil"
-                hint="De lado, braços alinhados com a linha da calça, pernas juntas."
-                file={sideFile}
-                onChange={setSideFile}
-              />
-
-              <Button disabled={!frontFile || !sideFile} onClick={handleSubmitPhotos}>
-                Enviar e calcular medidas
-              </Button>
-              <button
-                type="button"
-                onClick={() => setStep("intro")}
-                className="text-sm text-muted-foreground hover:underline"
-              >
-                Voltar
-              </button>
+            <div className="mt-6">
+              {manualFront ? (
+                <PhotoField
+                  label="Foto de frente"
+                  hint="De frente pra câmera, braços afastados do corpo em 'A', pernas separadas."
+                  file={frontFile}
+                  onChange={setFrontFile}
+                />
+              ) : (
+                <GuidedCamera mode="front" onCapture={setFrontFile} onSkip={() => setManualFront(true)} />
+              )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setStep("intro")}
+              className="mt-6 text-sm text-muted-foreground hover:underline"
+            >
+              Voltar
+            </button>
+          </div>
+        )}
+
+        {step === "capture" && frontFile && !sideFile && (
+          <div>
+            <div className="text-mono mb-2 text-primary">Passo 2 de 2 · Foto de perfil</div>
+            <h1 className="text-display text-4xl text-ink">Agora de lado</h1>
+            <p className="mt-3 text-muted-foreground">
+              Vire de perfil, braços alinhados com a linha da calça, pernas juntas.
+            </p>
+
+            <div className="mt-6">
+              {manualSide ? (
+                <PhotoField
+                  label="Foto de perfil"
+                  hint="De lado, braços alinhados com a linha da calça, pernas juntas."
+                  file={sideFile}
+                  onChange={setSideFile}
+                />
+              ) : (
+                <GuidedCamera mode="side" onCapture={setSideFile} onSkip={() => setManualSide(true)} />
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setFrontFile(null)}
+              className="mt-6 text-sm text-muted-foreground hover:underline"
+            >
+              Refazer foto de frente
+            </button>
+          </div>
+        )}
+
+        {step === "capture" && frontFile && sideFile && (
+          <div>
+            <div className="text-mono mb-2 text-primary">Passo 2 de 2 · Revisão</div>
+            <h1 className="text-display text-4xl text-ink">Suas fotos</h1>
+
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <div>
+                <div className="mb-2 text-sm text-foreground">Frente</div>
+                <button
+                  type="button"
+                  onClick={() => setFrontFile(null)}
+                  className="block aspect-[3/4] w-full overflow-hidden rounded-2xl border hairline"
+                >
+                  <img src={URL.createObjectURL(frontFile)} alt="Foto de frente" className="h-full w-full object-cover" />
+                </button>
+              </div>
+              <div>
+                <div className="mb-2 text-sm text-foreground">Perfil</div>
+                <button
+                  type="button"
+                  onClick={() => setSideFile(null)}
+                  className="block aspect-[3/4] w-full overflow-hidden rounded-2xl border hairline"
+                >
+                  <img src={URL.createObjectURL(sideFile)} alt="Foto de perfil" className="h-full w-full object-cover" />
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Toque em uma foto pra refazer.</p>
+
+            <Button className="mt-8" onClick={handleSubmitPhotos}>
+              Enviar e calcular medidas
+            </Button>
           </div>
         )}
 
@@ -349,6 +412,8 @@ function Provador() {
                 setStep("intro");
                 setFrontFile(null);
                 setSideFile(null);
+                setManualFront(false);
+                setManualSide(false);
                 setResult(null);
               }}
             >
