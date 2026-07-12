@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState } from "react";
 
@@ -11,6 +11,7 @@ import {
   pollCaptureSession,
   type CaptureSessionState,
 } from "@/lib/captureSession";
+import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import type { Gender, ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
 
@@ -31,30 +32,6 @@ const STATUS_LABELS: Record<CaptureSessionState["status"], string> = {
   done: "Pronto!",
   failed: "Algo deu errado.",
 };
-
-// Only the volume_params/front_params keys we want to surface, in display order.
-// Everything else 3DLOOK returns (body_model, textures, debug info, etc.) is internal.
-const MEASUREMENT_LABELS: Record<string, string> = {
-  chest: "Busto/Peito",
-  waist: "Cintura",
-  high_hips: "Quadril",
-  bicep: "Bíceps",
-  neck: "Pescoço",
-  neck_girth: "Pescoço",
-  thigh: "Coxa",
-  calf: "Panturrilha",
-  wrist: "Pulso",
-  ankle: "Tornozelo",
-  abdomen: "Abdômen",
-  shoulders: "Ombros",
-  inseam: "Entrepernas",
-  sleeve_length: "Comprimento da manga",
-  outseam: "Comprimento externo da perna",
-};
-
-function isDisplayableMeasurement(key: string, value: unknown): value is number {
-  return key in MEASUREMENT_LABELS && typeof value === "number";
-}
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
   const options: { value: Gender; label: string }[] = [
@@ -309,10 +286,20 @@ function Provador() {
               {STATUS_LABELS[sessionStatus]}
             </div>
 
+            {sessionId && (
+              <Link
+                to="/captura/$sessionId"
+                params={{ sessionId }}
+                className="mt-6 block w-full text-center text-sm text-primary hover:underline"
+              >
+                Já está com o celular na mão? Toque aqui pra tirar as fotos por aqui mesmo
+              </Link>
+            )}
+
             <button
               type="button"
               onClick={() => setStep("intro")}
-              className="mt-8 block w-full text-center text-sm text-muted-foreground hover:underline"
+              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
               Voltar
             </button>

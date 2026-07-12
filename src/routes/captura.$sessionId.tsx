@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { CaptureCamera } from "@/components/CaptureCamera";
 import {
   getCaptureSession,
+  pollCaptureSession,
   submitCapturePhotos,
   type CaptureSessionState,
 } from "@/lib/captureSession";
+import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
+import type { ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
 
 export const Route = createFileRoute("/captura/$sessionId")({
@@ -17,13 +20,13 @@ export const Route = createFileRoute("/captura/$sessionId")({
 type LocalStep =
   | "loading"
   | "not_found"
-  | "already_used"
   | "front_intro"
   | "front_shot"
   | "side_intro"
   | "side_shot"
   | "sending"
-  | "sent"
+  | "processing"
+  | "done"
   | "error";
 
 function CapturaPage() {
@@ -31,19 +34,31 @@ function CapturaPage() {
   const [step, setStep] = useState<LocalStep>("loading");
   const [name, setName] = useState("");
   const [frontImage, setFrontImage] = useState("");
+  const [result, setResult] = useState<ScanStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
+  // Works whether this phone is a second device (kiosk handed off via QR) or
+  // the only device in play (visitor tapped "continue here" on the kiosk
+  // screen) — either way, once photos go out this page just waits it out and
+  // shows the result itself, instead of assuming there's a computer to check.
   useEffect(() => {
     let cancelled = false;
     getCaptureSession({ data: { sessionId } })
       .then((session: CaptureSessionState | null) => {
-        if (cancelled) return;
-        if (!session) {
-          setStep("not_found");
+        if (cancelled || !session) {
+          if (!cancelled) setStep("not_found");
           return;
         }
         setName(session.name);
-        setStep(session.status === "waiting_photos" ? "front_intro" : "already_used");
+        if (session.status === "waiting_photos") setStep("front_intro");
+        else if (session.status === "processing") setStep("processing");
+        else if (session.status === "done") {
+          setResult(session.result);
+          setStep("done");
+        } else {
+          setErrorMessage(session.message);
+          setStep("error");
+        }
       })
       .catch(() => !cancelled && setStep("not_found"));
     return () => {
@@ -51,13 +66,40 @@ function CapturaPage() {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    if (step !== "processing") return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const session = await pollCaptureSession({ data: { sessionId } });
+        if (cancelled || !session) return;
+
+        if (session.status === "done") {
+          setResult(session.result);
+          setStep("done");
+        } else if (session.status === "failed") {
+          setErrorMessage(session.message);
+          setStep("error");
+        }
+      } catch {
+        // Transient network hiccup — just try again on the next tick.
+      }
+    }, 3_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [step, sessionId]);
+
   async function handleSideCapture(sideImage: string) {
     setStep("sending");
     try {
       await submitCapturePhotos({
         data: { sessionId, frontImageBase64: frontImage, sideImageBase64: sideImage },
       });
-      setStep("sent");
+      setStep("processing");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Algo deu errado ao enviar as fotos.");
       setStep("error");
@@ -89,15 +131,6 @@ function CapturaPage() {
             <h1 className="text-display text-2xl text-ink">Link expirado ou inválido</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Peça um novo código QR no computador.
-            </p>
-          </div>
-        )}
-
-        {step === "already_used" && (
-          <div className="py-24 text-center">
-            <h1 className="text-display text-2xl text-ink">Fotos já enviadas</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Esse código já foi usado, {name}. Volte para o computador para ver o resultado.
             </p>
           </div>
         )}
@@ -151,22 +184,38 @@ function CapturaPage() {
           <p className="py-24 text-center text-sm text-muted-foreground">Enviando fotos…</p>
         )}
 
-        {step === "sent" && (
-          <div className="py-24 text-center">
-            <h1 className="text-display text-2xl text-ink">Prontinho!</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Suas fotos foram enviadas. Pode voltar para o computador para ver suas medidas.
-            </p>
+        {step === "processing" && (
+          <div className="flex flex-col items-center py-24 text-center">
+            <h1 className="text-display text-2xl text-ink">Fotos enviadas!</h1>
+            <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+              Calculando suas medidas…
+            </div>
+          </div>
+        )}
+
+        {step === "done" && result && (
+          <div>
+            <div className="text-mono mb-2 text-primary">Pronto</div>
+            <h1 className="text-display text-4xl text-ink">Suas medidas</h1>
+
+            <div className="mt-8 divide-y hairline rounded-2xl border hairline">
+              {Object.entries({ ...result.volumeParams, ...result.frontParams })
+                .filter(([key, value]) => isDisplayableMeasurement(key, value))
+                .map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between px-5 py-4">
+                    <span className="text-sm text-foreground">{MEASUREMENT_LABELS[key]}</span>
+                    <span className="text-display text-lg text-primary">{value} cm</span>
+                  </div>
+                ))}
+            </div>
           </div>
         )}
 
         {step === "error" && (
           <div className="py-24 text-center">
-            <h1 className="text-display text-2xl text-ink">Não foi possível enviar</h1>
+            <h1 className="text-display text-2xl text-ink">Não foi possível calcular</h1>
             <p className="mt-2 text-sm text-muted-foreground">{errorMessage}</p>
-            <Button className="mt-8" onClick={() => setStep("side_shot")}>
-              Tentar de novo
-            </Button>
           </div>
         )}
       </main>
