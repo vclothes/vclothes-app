@@ -1,23 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import { clearLatestScan, getLatestScan, type Gender, type ScanStatus } from "@/lib/threedlook";
+import {
+  createCaptureSession,
+  pollCaptureSession,
+  type CaptureSessionState,
+} from "@/lib/captureSession";
+import type { Gender, ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
 
 export const Route = createFileRoute("/")({
   component: Provador,
 });
 
-type Step = "intro" | "instructions" | "waiting" | "result" | "error";
+type Step = "intro" | "qr" | "result" | "error";
 
 const STEP_NUMBER: Partial<Record<Step, number>> = {
   intro: 1,
-  instructions: 2,
-  waiting: 3,
+  qr: 2,
+};
+
+const STATUS_LABELS: Record<CaptureSessionState["status"], string> = {
+  waiting_photos: "Aguardando você tirar as fotos no celular…",
+  processing: "Calculando suas medidas…",
+  done: "Pronto!",
+  failed: "Algo deu errado.",
 };
 
 // Only the volume_params/front_params keys we want to surface, in display order.
@@ -140,9 +152,11 @@ function Provador() {
   const [gender, setGender] = useState<Gender>("female");
   const [height, setHeight] = useState("170");
   const [weight, setWeight] = useState("65");
+  const [sessionId, setSessionId] = useState("");
+  const [sessionStatus, setSessionStatus] =
+    useState<CaptureSessionState["status"]>("waiting_photos");
   const [result, setResult] = useState<ScanStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [checking, setChecking] = useState(false);
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -151,59 +165,71 @@ function Provador() {
     Number(weight) >= 30 &&
     Number(weight) <= 200;
 
-  async function goToWaiting() {
-    // Clear any leftover result from a previous visitor before this one starts,
-    // so "Já terminei" can't accidentally show someone else's measurements.
-    await clearLatestScan();
-    setStep("waiting");
-  }
-
-  async function handleCheckResult() {
-    setChecking(true);
+  async function goToQr() {
     setErrorMessage("");
-
     try {
-      let scan: ScanStatus | null = null;
-      const startedAt = Date.now();
-      const timeoutMs = 90_000;
-      const pollIntervalMs = 4_000;
-
-      while (Date.now() - startedAt < timeoutMs) {
-        scan = await getLatestScan();
-        if (scan?.isReady) break;
-        await new Promise((r) => setTimeout(r, pollIntervalMs));
-      }
-
-      if (!scan?.isReady) {
-        throw new Error(
-          "Ainda não recebemos seu resultado. Confirme que você terminou o escaneamento no site da 3DLOOK e tente de novo.",
-        );
-      }
-
-      if (!scan.isSuccessful) {
-        throw new Error((scan.failureMessages ?? []).join(" "));
-      }
-
-      setResult(scan);
-      setStep("result");
+      const { sessionId: id } = await createCaptureSession({
+        data: { name: name.trim(), gender, heightCm: Number(height), weightKg: Number(weight) },
+      });
+      setSessionId(id);
+      setSessionStatus("waiting_photos");
+      setStep("qr");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
       setStep("error");
-    } finally {
-      setChecking(false);
     }
   }
 
+  // While the QR step is showing, poll for the visitor's phone submitting
+  // photos and 3DLOOK finishing processing — no "já terminei" button needed.
+  useEffect(() => {
+    if (step !== "qr" || !sessionId) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const session = await pollCaptureSession({ data: { sessionId } });
+        if (cancelled || !session) return;
+
+        setSessionStatus(session.status);
+        if (session.status === "done") {
+          setResult(session.result);
+          setStep("result");
+        } else if (session.status === "failed") {
+          setErrorMessage(session.message);
+          setStep("error");
+        }
+      } catch {
+        // Transient network hiccup — just try again on the next tick.
+      }
+    }, 3_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [step, sessionId]);
+
   const stepNumber = STEP_NUMBER[step];
+  const captureUrl =
+    typeof window !== "undefined" && sessionId
+      ? `${window.location.origin}/captura/${sessionId}`
+      : "";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b hairline">
         <div className="mx-auto flex h-18 max-w-3xl items-center px-6">
-          <img src={logoVClothes} alt="V-Clothes" className="h-8 w-8 object-contain" width={1024} height={1024} />
+          <img
+            src={logoVClothes}
+            alt="V-Clothes"
+            className="h-8 w-8 object-contain"
+            width={1024}
+            height={1024}
+          />
           <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
           {stepNumber && (
-            <span className="text-mono ml-auto text-muted-foreground">Passo {stepNumber} de 3</span>
+            <span className="text-mono ml-auto text-muted-foreground">Passo {stepNumber} de 2</span>
           )}
         </div>
       </header>
@@ -211,7 +237,7 @@ function Provador() {
       <main className="mx-auto w-full max-w-md flex-1 px-6 py-12">
         {step === "intro" && (
           <div>
-            <div className="text-mono mb-2 text-primary">Passo 1 de 3</div>
+            <div className="text-mono mb-2 text-primary">Passo 1 de 2</div>
             <h1 className="text-display text-4xl text-ink">Suas informações</h1>
             <p className="mt-3 text-muted-foreground">
               Esses dados ajudam a calibrar a escala das suas medidas.
@@ -235,87 +261,60 @@ function Provador() {
                 <GenderSelect value={gender} onChange={setGender} />
               </div>
 
-              <NumberStepper label="Altura" unit="cm" value={height} onChange={setHeight} min={120} max={220} />
-              <NumberStepper label="Peso" unit="kg" value={weight} onChange={setWeight} min={30} max={200} />
+              <NumberStepper
+                label="Altura"
+                unit="cm"
+                value={height}
+                onChange={setHeight}
+                min={120}
+                max={220}
+              />
+              <NumberStepper
+                label="Peso"
+                unit="kg"
+                value={weight}
+                onChange={setWeight}
+                min={30}
+                max={200}
+              />
 
-              <Button disabled={!canContinueFromIntro} onClick={() => setStep("instructions")} className="mt-2">
+              <Button disabled={!canContinueFromIntro} onClick={goToQr} className="mt-2">
                 Continuar
               </Button>
             </div>
           </div>
         )}
 
-        {step === "instructions" && (
-          <div>
-            <div className="text-mono mb-2 text-primary">Passo 2 de 3</div>
-            <h1 className="text-display text-4xl text-ink">Hora de escanear</h1>
-            <p className="mt-3 text-muted-foreground">
-              O escaneamento é feito no sistema da 3DLOOK, referência mundial em medidas corporais
-              por foto.
+        {step === "qr" && (
+          <div className="flex flex-col items-center py-8 text-center">
+            <div className="text-mono mb-2 text-primary">Passo 2 de 2</div>
+            <h1 className="text-display text-3xl text-ink">Aponte a câmera do celular</h1>
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
+              Escaneie o código com o celular que vai fotografar {name || "você"}. Ele vai guiar a
+              foto de frente e de perfil.
             </p>
 
-            <ol className="mt-6 space-y-4">
-              <li className="flex gap-3 text-sm text-foreground">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-medium text-primary-foreground">
-                  1
-                </span>
-                <span>
-                  Peça pro nosso time gerar seu código QR com o nome <strong>{name || "—"}</strong>.
-                </span>
-              </li>
-              <li className="flex gap-3 text-sm text-foreground">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-medium text-primary-foreground">
-                  2
-                </span>
-                <span>Escaneie o QR code com a câmera do seu celular.</span>
-              </li>
-              <li className="flex gap-3 text-sm text-foreground">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-medium text-primary-foreground">
-                  3
-                </span>
-                <span>
-                  Siga as instruções na tela: roupa justa, fundo liso, corpo inteiro visível.
-                </span>
-              </li>
-              <li className="flex gap-3 text-sm text-foreground">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-medium text-primary-foreground">
-                  4
-                </span>
-                <span>Quando terminar, volte pra essa tela.</span>
-              </li>
-            </ol>
+            <div className="mt-8 rounded-2xl border hairline bg-card p-5">
+              {captureUrl ? (
+                <QRCodeSVG value={captureUrl} size={220} />
+              ) : (
+                <div className="flex h-[220px] w-[220px] items-center justify-center text-sm text-muted-foreground">
+                  Gerando código…
+                </div>
+              )}
+            </div>
 
-            <Button onClick={goToWaiting} className="mt-8 w-full">
-              Já escaneei, ver meu resultado
-            </Button>
+            <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+              {STATUS_LABELS[sessionStatus]}
+            </div>
+
             <button
               type="button"
               onClick={() => setStep("intro")}
-              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
+              className="mt-8 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
               Voltar
-            </button>
-          </div>
-        )}
-
-        {step === "waiting" && (
-          <div className="flex flex-col items-center py-16 text-center">
-            <div className="text-mono mb-2 text-primary">Passo 3 de 3</div>
-            <h1 className="text-display text-3xl text-ink">Terminou de escanear?</h1>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              Toque no botão abaixo depois de concluir o processo no site da 3DLOOK. Pode levar
-              até 90 segundos pra calcular suas medidas.
-            </p>
-
-            <Button onClick={handleCheckResult} disabled={checking} className="mt-8 w-full">
-              {checking ? "Verificando…" : "Já terminei, ver meu resultado"}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setStep("instructions")}
-              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
-            >
-              Ver instruções de novo
             </button>
           </div>
         )}
@@ -353,7 +352,13 @@ function Provador() {
           <div className="flex flex-col items-center py-24 text-center">
             <h1 className="text-display text-2xl text-ink">Não foi possível calcular</h1>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">{errorMessage}</p>
-            <Button className="mt-8" onClick={() => setStep("waiting")}>
+            <Button
+              className="mt-8"
+              onClick={() => {
+                setStep("intro");
+                setSessionId("");
+              }}
+            >
               Tentar de novo
             </Button>
           </div>
