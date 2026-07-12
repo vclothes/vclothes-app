@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -12,7 +13,14 @@ export const Route = createFileRoute("/")({
   component: Provador,
 });
 
-type Step = "intro" | "front_instructions";
+type Step = "intro" | "front_instructions" | "front_capture" | "front_captured";
+
+const STEP_NUMBER: Record<Step, number> = {
+  intro: 1,
+  front_instructions: 2,
+  front_capture: 3,
+  front_captured: 3,
+};
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
   const options: { value: Gender; label: string }[] = [
@@ -139,6 +147,7 @@ function Provador() {
   const [gender, setGender] = useState<Gender>("female");
   const [height, setHeight] = useState("170");
   const [weight, setWeight] = useState("65");
+  const [frontImage, setFrontImage] = useState("");
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -159,9 +168,7 @@ function Provador() {
             height={1024}
           />
           <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
-          <span className="text-mono ml-auto text-muted-foreground">
-            Passo {step === "intro" ? 1 : 2}
-          </span>
+          <span className="text-mono ml-auto text-muted-foreground">Passo {STEP_NUMBER[step]}</span>
         </div>
       </header>
 
@@ -241,13 +248,62 @@ function Provador() {
               ))}
             </ul>
 
-            <Button className="mt-8 w-full">Continuar</Button>
+            <Button onClick={() => setStep("front_capture")} className="mt-8 w-full">
+              Continuar
+            </Button>
             <button
               type="button"
               onClick={() => setStep("intro")}
               className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
               Voltar
+            </button>
+          </div>
+        )}
+
+        {step === "front_capture" && (
+          <div className="flex flex-col items-center text-center">
+            <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde, a
+              foto é tirada sozinha.
+            </p>
+
+            <div className="mt-6 w-full">
+              <GuidedCamera
+                onCapture={(base64) => {
+                  setFrontImage(base64);
+                  setStep("front_captured");
+                }}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setStep("front_instructions")}
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
+            >
+              Ver instruções de novo
+            </button>
+          </div>
+        )}
+
+        {step === "front_captured" && (
+          <div className="flex flex-col items-center text-center">
+            <h1 className="text-display text-3xl text-ink">Foto capturada!</h1>
+            {frontImage && (
+              <img
+                src={frontImage}
+                alt="Foto de frente capturada"
+                className="mt-6 aspect-[3/4] w-full rounded-2xl object-cover"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setStep("front_capture")}
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
+            >
+              Tirar de novo
             </button>
           </div>
         )}
