@@ -12,6 +12,8 @@ export const Route = createFileRoute("/")({
   component: Provador,
 });
 
+type Step = "intro" | "front_instructions";
+
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
   const options: { value: Gender; label: string }[] = [
     { value: "female", label: "Feminino" },
@@ -102,7 +104,38 @@ function NumberStepper({
   );
 }
 
+function FrontPoseIllustration() {
+  return (
+    <svg viewBox="0 0 300 400" className="h-64 w-auto" aria-hidden="true">
+      <rect x="0" y="0" width="300" height="400" rx="24" className="fill-secondary" />
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4"
+        strokeLinecap="round"
+        className="text-ink"
+      >
+        <circle cx="150" cy="70" r="30" />
+        <line x1="150" y1="100" x2="150" y2="240" />
+        <line x1="150" y1="130" x2="85" y2="95" />
+        <line x1="150" y1="130" x2="215" y2="95" />
+        <line x1="150" y1="240" x2="112" y2="360" />
+        <line x1="150" y1="240" x2="188" y2="360" />
+        <line x1="100" y1="160" x2="200" y2="160" />
+      </g>
+    </svg>
+  );
+}
+
+const FRONT_PHOTO_TIPS = [
+  "Fique de frente para a câmera, com o corpo inteiro visível.",
+  "Braços levemente afastados do corpo, como na ilustração.",
+  "Roupas justas ao corpo, sem casacos ou peças largas por cima.",
+  "Fundo liso e ambiente bem iluminado.",
+];
+
 function Provador() {
+  const [step, setStep] = useState<Step>("intro");
   const [name, setName] = useState("");
   const [gender, setGender] = useState<Gender>("female");
   const [height, setHeight] = useState("170");
@@ -127,56 +160,98 @@ function Provador() {
             height={1024}
           />
           <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
+          <span className="text-mono ml-auto text-muted-foreground">
+            Passo {step === "intro" ? 1 : 2}
+          </span>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md flex-1 px-6 py-12">
-        <div>
-          <h1 className="text-display text-4xl text-ink">Suas informações</h1>
-          <p className="mt-3 text-muted-foreground">
-            Esses dados ajudam a calibrar a escala das suas medidas.
-          </p>
+        {step === "intro" && (
+          <div>
+            <h1 className="text-display text-4xl text-ink">Suas informações</h1>
+            <p className="mt-3 text-muted-foreground">
+              Esses dados ajudam a calibrar a escala das suas medidas.
+            </p>
 
-          <div className="mt-8 flex flex-col gap-6">
-            <div>
-              <Label htmlFor="name" className="mb-3 block">
-                Nome
-              </Label>
-              <Input
-                id="name"
-                placeholder="Seu nome"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+            <div className="mt-8 flex flex-col gap-6">
+              <div>
+                <Label htmlFor="name" className="mb-3 block">
+                  Nome
+                </Label>
+                <Input
+                  id="name"
+                  placeholder="Seu nome"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label className="mb-3 block">Gênero</Label>
+                <GenderSelect value={gender} onChange={setGender} />
+              </div>
+
+              <NumberStepper
+                label="Altura"
+                unit="cm"
+                value={height}
+                onChange={setHeight}
+                min={120}
+                max={220}
               />
+              <NumberStepper
+                label="Peso"
+                unit="kg"
+                value={weight}
+                onChange={setWeight}
+                min={30}
+                max={200}
+              />
+
+              <Button
+                disabled={!canContinueFromIntro}
+                onClick={() => setStep("front_instructions")}
+                className="mt-2"
+              >
+                Continuar
+              </Button>
             </div>
-
-            <div>
-              <Label className="mb-3 block">Gênero</Label>
-              <GenderSelect value={gender} onChange={setGender} />
-            </div>
-
-            <NumberStepper
-              label="Altura"
-              unit="cm"
-              value={height}
-              onChange={setHeight}
-              min={120}
-              max={220}
-            />
-            <NumberStepper
-              label="Peso"
-              unit="kg"
-              value={weight}
-              onChange={setWeight}
-              min={30}
-              max={200}
-            />
-
-            <Button disabled={!canContinueFromIntro} className="mt-2">
-              Continuar
-            </Button>
           </div>
-        </div>
+        )}
+
+        {step === "front_instructions" && (
+          <div className="flex flex-col items-center text-center">
+            <h1 className="text-display text-4xl text-ink">Foto de frente</h1>
+            <p className="mt-3 text-muted-foreground">
+              Vamos te guiar pra tirar uma boa foto de frente. Confira as dicas antes de começar.
+            </p>
+
+            <div className="mt-8">
+              <FrontPoseIllustration />
+            </div>
+
+            <ul className="mt-8 flex w-full flex-col gap-3 text-left">
+              {FRONT_PHOTO_TIPS.map((tip) => (
+                <li key={tip} className="flex gap-3 text-sm text-foreground">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-medium text-primary-foreground">
+                    ✓
+                  </span>
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Button className="mt-8 w-full">Continuar</Button>
+            <button
+              type="button"
+              onClick={() => setStep("intro")}
+              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
+            >
+              Voltar
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );
