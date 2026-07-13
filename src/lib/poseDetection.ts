@@ -111,7 +111,9 @@ export function detectKeypoints(
   });
 }
 
-const MIN_SCORE = 0.3;
+// Same bar as the skeleton overlay's drawing threshold — a check should
+// never pass on a point too unreliable to even show as a dot.
+const MIN_SCORE = 0.5;
 
 function kp(keypoints: Keypoint[], name: string): Keypoint | undefined {
   const point = keypoints.find((k) => k.name === name);
@@ -160,35 +162,60 @@ export function evaluateFrontPose(
 
   const leftAnkle = kp(keypoints, "left_ankle");
   const rightAnkle = kp(keypoints, "right_ankle");
+  const leftElbow = kp(keypoints, "left_elbow");
+  const rightElbow = kp(keypoints, "right_elbow");
   const leftWrist = kp(keypoints, "left_wrist");
   const rightWrist = kp(keypoints, "right_wrist");
   const nose = kp(keypoints, "nose");
 
   const shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
   const hipMidX = (leftHip.x + rightHip.x) / 2;
+  const hipMidY = (leftHip.y + rightHip.y) / 2;
   const centerX = (shoulderMidX + hipMidX) / 2;
   const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
 
-  const centered = centerX > videoWidth * 0.2 && centerX < videoWidth * 0.8;
+  const centered = centerX > videoWidth * 0.25 && centerX < videoWidth * 0.75;
 
   const topY = nose ? nose.y : Math.min(leftShoulder.y, rightShoulder.y) - shoulderWidth * 0.6;
-  const bottomY = leftAnkle && rightAnkle ? Math.max(leftAnkle.y, rightAnkle.y) : undefined;
+  // Ankles need to be both confidently detected AND clearly below the hips
+  // — a seated or table-occluded person can still produce a low-but-passable
+  // ankle guess near hip height, which isn't actually "legs visible."
+  const legsVisible =
+    !!leftAnkle &&
+    !!rightAnkle &&
+    Math.min(leftAnkle.y, rightAnkle.y) > hipMidY + shoulderWidth * 1.2;
+  const bottomY = legsVisible ? Math.max(leftAnkle!.y, rightAnkle!.y) : undefined;
   const fullyVisible =
     bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.98;
 
   const bodyHeight = bottomY !== undefined ? bottomY - topY : 0;
-  const properSize = bodyHeight > videoHeight * 0.3 && bodyHeight < videoHeight * 1.0;
+  const properSize = bodyHeight > videoHeight * 0.55 && bodyHeight < videoHeight * 1.0;
 
-  function armOk(wrist: Keypoint | undefined, shoulder: Keypoint, hip: Keypoint) {
-    if (!wrist) return false;
+  // A hanging arm: elbow noticeably below the shoulder, wrist below the
+  // elbow (roughly straight down), and the wrist ending up near hip height
+  // — not up near the chest, which is what crossed or bent arms look like.
+  function armOk(
+    wrist: Keypoint | undefined,
+    elbow: Keypoint | undefined,
+    shoulder: Keypoint,
+    hip: Keypoint,
+  ) {
+    if (!wrist || !elbow) return false;
     const outward = Math.abs(wrist.x - hip.x);
-    const hangingDown =
-      wrist.y > shoulder.y - shoulderWidth * 0.2 && wrist.y < (bottomY ?? videoHeight);
-    return hangingDown && outward > shoulderWidth * 0.03 && outward < shoulderWidth * 1.1;
+    const extendsDown = elbow.y > shoulder.y + shoulderWidth * 0.15 && wrist.y > elbow.y;
+    const wristNearHipHeight =
+      wrist.y > hipMidY - shoulderWidth * 0.6 && wrist.y < hipMidY + shoulderWidth * 1.3;
+    return (
+      extendsDown &&
+      wristNearHipHeight &&
+      outward > shoulderWidth * 0.1 &&
+      outward < shoulderWidth * 0.55
+    );
   }
 
   const armsOk =
-    armOk(leftWrist, leftShoulder, leftHip) && armOk(rightWrist, rightShoulder, rightHip);
+    armOk(leftWrist, leftElbow, leftShoulder, leftHip) &&
+    armOk(rightWrist, rightElbow, rightShoulder, rightHip);
 
   const checks: PoseChecks = { bodyDetected: true, centered, fullyVisible, properSize, armsOk };
   const passCount = [centered, fullyVisible, properSize, armsOk].filter(Boolean).length;
