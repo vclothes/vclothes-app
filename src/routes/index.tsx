@@ -13,13 +13,13 @@ export const Route = createFileRoute("/")({
   component: Provador,
 });
 
-type Step = "intro" | "front_instructions" | "front_capture" | "front_captured";
+type Step = "intro" | "front_instructions" | "front_capture" | "side_instructions";
 
 const STEP_NUMBER: Record<Step, number> = {
   intro: 1,
   front_instructions: 2,
   front_capture: 3,
-  front_captured: 3,
+  side_instructions: 4,
 };
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
@@ -139,6 +139,34 @@ const FRONT_PHOTO_TIPS = [
   "Braços levemente afastados do corpo, como na ilustração.",
   "Roupas justas ao corpo, sem casacos ou peças largas por cima.",
   "Fundo liso e ambiente bem iluminado.",
+];
+
+function SidePoseIllustration() {
+  return (
+    <svg viewBox="0 0 300 400" className="h-64 w-auto" aria-hidden="true">
+      <rect x="0" y="0" width="300" height="400" rx="24" className="fill-secondary" />
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4"
+        strokeLinecap="round"
+        className="text-ink"
+      >
+        <circle cx="160" cy="70" r="30" />
+        <line x1="158" y1="100" x2="150" y2="240" />
+        <line x1="155" y1="115" x2="120" y2="210" />
+        <line x1="150" y1="240" x2="140" y2="360" />
+        <line x1="150" y1="240" x2="175" y2="355" />
+      </g>
+    </svg>
+  );
+}
+
+const SIDE_PHOTO_TIPS = [
+  "Gire 90° e fique de lado (perfil) para a câmera.",
+  "Mesma distância e iluminação da foto de frente.",
+  "Braço ao lado do corpo, sem cruzar na frente.",
+  "Olhe para o lado, não para a câmera.",
 ];
 
 function Provador() {
@@ -273,7 +301,7 @@ function Provador() {
               <GuidedCamera
                 onCapture={(base64) => {
                   setFrontImage(base64);
-                  setStep("front_captured");
+                  setStep("side_instructions");
                 }}
               />
             </div>
@@ -288,22 +316,35 @@ function Provador() {
           </div>
         )}
 
-        {step === "front_captured" && (
+        {step === "side_instructions" && (
           <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-3xl text-ink">Foto capturada!</h1>
-            {frontImage && (
-              <img
-                src={frontImage}
-                alt="Foto de frente capturada"
-                className="mt-6 aspect-[3/4] w-full rounded-2xl object-cover"
-              />
-            )}
+            <h1 className="text-display text-4xl text-ink">Foto de perfil</h1>
+            <p className="mt-3 text-muted-foreground">
+              Foto de frente ok! Agora vamos tirar sua foto de perfil (de lado).
+            </p>
+
+            <div className="mt-8">
+              <SidePoseIllustration />
+            </div>
+
+            <ul className="mt-8 flex w-full flex-col gap-3 text-left">
+              {SIDE_PHOTO_TIPS.map((tip) => (
+                <li key={tip} className="flex gap-3 text-sm text-foreground">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-medium text-primary-foreground">
+                    ✓
+                  </span>
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Button className="mt-8 w-full">Continuar</Button>
             <button
               type="button"
               onClick={() => setStep("front_capture")}
-              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
+              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
-              Tirar de novo
+              Voltar
             </button>
           </div>
         )}
