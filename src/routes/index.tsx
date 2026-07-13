@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 
 import type { Gender } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
+import poseFrontAvatar from "@/assets/pose-front-avatar.jpg";
+import poseSideAvatar from "@/assets/pose-side-avatar.jpg";
 
 export const Route = createFileRoute("/")({
   component: Provador,
@@ -112,55 +114,12 @@ function NumberStepper({
   );
 }
 
-function FrontPoseIllustration() {
-  return (
-    <svg viewBox="0 0 300 400" className="h-64 w-auto" aria-hidden="true">
-      <rect x="0" y="0" width="300" height="400" rx="24" className="fill-secondary" />
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinecap="round"
-        className="text-ink"
-      >
-        <circle cx="150" cy="70" r="30" />
-        <line x1="150" y1="100" x2="150" y2="240" />
-        <line x1="150" y1="115" x2="108" y2="225" />
-        <line x1="150" y1="115" x2="192" y2="225" />
-        <line x1="150" y1="240" x2="112" y2="360" />
-        <line x1="150" y1="240" x2="188" y2="360" />
-      </g>
-    </svg>
-  );
-}
-
 const FRONT_PHOTO_TIPS = [
   "Fique de frente para a câmera, com o corpo inteiro visível.",
   "Braços levemente afastados do corpo, como na ilustração.",
   "Roupas justas ao corpo, sem casacos ou peças largas por cima.",
   "Fundo liso e ambiente bem iluminado.",
 ];
-
-function SidePoseIllustration() {
-  return (
-    <svg viewBox="0 0 300 400" className="h-64 w-auto" aria-hidden="true">
-      <rect x="0" y="0" width="300" height="400" rx="24" className="fill-secondary" />
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinecap="round"
-        className="text-ink"
-      >
-        <circle cx="160" cy="70" r="30" />
-        <line x1="158" y1="100" x2="150" y2="240" />
-        <line x1="155" y1="115" x2="120" y2="210" />
-        <line x1="150" y1="240" x2="140" y2="360" />
-        <line x1="150" y1="240" x2="175" y2="355" />
-      </g>
-    </svg>
-  );
-}
 
 const SIDE_PHOTO_TIPS = [
   "Gire 90° e fique de lado (perfil) para a câmera.",
@@ -261,8 +220,12 @@ function Provador() {
               Vamos te guiar pra tirar uma boa foto de frente. Confira as dicas antes de começar.
             </p>
 
-            <div className="mt-8">
-              <FrontPoseIllustration />
+            <div className="mt-8 overflow-hidden rounded-2xl bg-secondary">
+              <img
+                src={poseFrontAvatar}
+                alt="Referência da pose de frente"
+                className="h-64 w-auto"
+              />
             </div>
 
             <ul className="mt-8 flex w-full flex-col gap-3 text-left">
@@ -323,8 +286,12 @@ function Provador() {
               Foto de frente ok! Agora vamos tirar sua foto de perfil (de lado).
             </p>
 
-            <div className="mt-8">
-              <SidePoseIllustration />
+            <div className="mt-8 overflow-hidden rounded-2xl bg-secondary">
+              <img
+                src={poseSideAvatar}
+                alt="Referência da pose de perfil"
+                className="h-64 w-auto"
+              />
             </div>
 
             <ul className="mt-8 flex w-full flex-col gap-3 text-left">
