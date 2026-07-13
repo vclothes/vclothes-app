@@ -13,13 +13,12 @@ export const Route = createFileRoute("/")({
   component: Provador,
 });
 
-type Step = "intro" | "front_instructions" | "front_capture" | "front_captured";
+type Step = "intro" | "front_instructions" | "front_capture";
 
 const STEP_NUMBER: Record<Step, number> = {
   intro: 1,
   front_instructions: 2,
   front_capture: 3,
-  front_captured: 3,
 };
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
@@ -147,7 +146,6 @@ function Provador() {
   const [gender, setGender] = useState<Gender>("female");
   const [height, setHeight] = useState("170");
   const [weight, setWeight] = useState("65");
-  const [frontImage, setFrontImage] = useState("");
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -263,19 +261,13 @@ function Provador() {
 
         {step === "front_capture" && (
           <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
+            <h1 className="text-display text-3xl text-ink">Detecção do corpo</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde, a
-              foto é tirada sozinha.
+              Fique visível na câmera — os pontos e linhas aparecem sobre o corpo quando detectado.
             </p>
 
             <div className="mt-6 w-full">
-              <GuidedCamera
-                onCapture={(base64) => {
-                  setFrontImage(base64);
-                  setStep("front_captured");
-                }}
-              />
+              <GuidedCamera />
             </div>
 
             <button
@@ -284,26 +276,6 @@ function Provador() {
               className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
             >
               Ver instruções de novo
-            </button>
-          </div>
-        )}
-
-        {step === "front_captured" && (
-          <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-3xl text-ink">Foto capturada!</h1>
-            {frontImage && (
-              <img
-                src={frontImage}
-                alt="Foto de frente capturada"
-                className="mt-6 aspect-[3/4] w-full rounded-2xl object-cover"
-              />
-            )}
-            <button
-              type="button"
-              onClick={() => setStep("front_capture")}
-              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
-            >
-              Tirar de novo
             </button>
           </div>
         )}
