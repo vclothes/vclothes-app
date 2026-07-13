@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { getPoseDetector, scoreFrontPose, type PoseStatus } from "@/lib/poseDetection";
+import {
+  detectKeypoints,
+  getPoseLandmarker,
+  scoreFrontPose,
+  type PoseStatus,
+} from "@/lib/poseDetection";
 
 const DETECTION_INTERVAL_MS = 200;
 const SUSTAIN_TICKS_FOR_GREEN = 4; // ~800ms of steady "green" before the countdown starts
@@ -67,7 +72,7 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
   }, [facingMode]);
 
   useEffect(() => {
-    getPoseDetector()
+    getPoseLandmarker()
       .then(() => setModelLoading(false))
       .catch(() => setError("Não conseguimos carregar o detector de posição."));
   }, []);
@@ -121,9 +126,8 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
       const video = videoRef.current;
       if (video && video.readyState >= 2 && !capturedRef.current) {
         try {
-          const detector = await getPoseDetector();
-          const poses = await detector.estimatePoses(video);
-          const keypoints = poses[0]?.keypoints ?? [];
+          const landmarker = await getPoseLandmarker();
+          const keypoints = detectKeypoints(landmarker, video, performance.now());
           const nextStatus =
             keypoints.length > 0
               ? scoreFrontPose(keypoints, video.videoWidth, video.videoHeight)

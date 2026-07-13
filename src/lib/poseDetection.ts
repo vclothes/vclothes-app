@@ -1,63 +1,95 @@
-// Loaded from CDN at runtime, not as npm dependencies — importing
-// @tensorflow/tfjs (and its webgl backend) as a normal npm dep previously
-// caused Vite/esbuild's dependency pre-bundling to hang indefinitely during
-// dev. Loading the prebuilt UMD bundles via <script> tags sidesteps that
-// entirely; only minimal hand-written types are used here, no npm package.
-const TFJS_SRC = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js";
-const POSE_DETECTION_SRC =
-  "https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js";
+// Loaded from CDN at runtime via a dynamic import() of a full URL, not as an
+// npm dependency. This fully bypasses Vite/esbuild's local dependency
+// pre-bundling — a static `import "@tensorflow/tfjs-backend-webgl"` from
+// node_modules previously hung that step indefinitely; a runtime
+// import() of a remote URL never touches it.
+const TASKS_VISION_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35";
+const WASM_BASE_URL = `${TASKS_VISION_URL}/wasm`;
+const MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
+
+type NormalizedLandmark = { x: number; y: number; z: number; visibility?: number };
+
+interface PoseLandmarkerResult {
+  landmarks: NormalizedLandmark[][];
+}
+
+export interface PoseLandmarkerInstance {
+  detectForVideo: (video: HTMLVideoElement, timestampMs: number) => PoseLandmarkerResult;
+}
+
+interface TasksVisionModule {
+  FilesetResolver: { forVisionTasks: (wasmBaseUrl: string) => Promise<unknown> };
+  PoseLandmarker: {
+    createFromOptions: (
+      fileset: unknown,
+      options: {
+        baseOptions: { modelAssetPath: string; delegate: "GPU" | "CPU" };
+        runningMode: "VIDEO";
+        numPoses: number;
+      },
+    ) => Promise<PoseLandmarkerInstance>;
+  };
+}
 
 export type Keypoint = { x: number; y: number; score?: number; name?: string };
 
-export interface PoseDetector {
-  estimatePoses: (input: HTMLVideoElement) => Promise<{ keypoints: Keypoint[] }[]>;
-}
+// MediaPipe's 33-point body landmark indices — only the ones the front-pose
+// check needs.
+const LANDMARK_NAMES: Record<number, string> = {
+  0: "nose",
+  11: "left_shoulder",
+  12: "right_shoulder",
+  15: "left_wrist",
+  16: "right_wrist",
+  23: "left_hip",
+  24: "right_hip",
+  27: "left_ankle",
+  28: "right_ankle",
+};
 
-interface PoseDetectionGlobal {
-  SupportedModels: { MoveNet: string };
-  movenet: { modelType: Record<string, string> };
-  createDetector: (model: string, config: unknown) => Promise<PoseDetector>;
-}
+let landmarkerPromise: Promise<PoseLandmarkerInstance> | null = null;
 
-declare global {
-  interface Window {
-    poseDetection?: PoseDetectionGlobal;
-  }
-}
-
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Falha ao carregar ${src}`));
-    document.head.appendChild(script);
+async function createLandmarker(delegate: "GPU" | "CPU"): Promise<PoseLandmarkerInstance> {
+  const vision = (await import(/* @vite-ignore */ TASKS_VISION_URL)) as TasksVisionModule;
+  const fileset = await vision.FilesetResolver.forVisionTasks(WASM_BASE_URL);
+  return vision.PoseLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    runningMode: "VIDEO",
+    numPoses: 1,
   });
 }
 
-let detectorPromise: Promise<PoseDetector> | null = null;
-
-export function getPoseDetector(): Promise<PoseDetector> {
-  if (!detectorPromise) {
-    detectorPromise = (async () => {
-      await loadScript(TFJS_SRC);
-      await loadScript(POSE_DETECTION_SRC);
-      const pd = window.poseDetection;
-      if (!pd) throw new Error("Falha ao carregar o modelo de detecção de pose.");
-      return pd.createDetector(pd.SupportedModels.MoveNet, {
-        modelType: pd.movenet.modelType.SINGLEPOSE_LIGHTNING,
-      });
-    })();
+// GPU delegate is faster but unsupported on some older mobile browsers —
+// fall back to CPU rather than failing outright.
+export function getPoseLandmarker(): Promise<PoseLandmarkerInstance> {
+  if (!landmarkerPromise) {
+    landmarkerPromise = createLandmarker("GPU").catch(() => createLandmarker("CPU"));
   }
-  return detectorPromise;
+  return landmarkerPromise;
 }
 
-const MIN_SCORE = 0.35;
+export function detectKeypoints(
+  landmarker: PoseLandmarkerInstance,
+  video: HTMLVideoElement,
+  timestampMs: number,
+): Keypoint[] {
+  const result = landmarker.detectForVideo(video, timestampMs);
+  const landmarks = result.landmarks[0];
+  if (!landmarks) return [];
+
+  return Object.entries(LANDMARK_NAMES).map(([indexStr, name]) => {
+    const lm = landmarks[Number(indexStr)];
+    return {
+      x: lm.x * video.videoWidth,
+      y: lm.y * video.videoHeight,
+      score: lm.visibility ?? 1,
+      name,
+    };
+  });
+}
+
+const MIN_SCORE = 0.5;
 
 function kp(keypoints: Keypoint[], name: string): Keypoint | undefined {
   const point = keypoints.find((k) => k.name === name);
