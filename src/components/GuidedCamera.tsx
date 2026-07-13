@@ -2,13 +2,43 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   detectKeypoints,
+  evaluateFrontPose,
   getPoseLandmarker,
   SKELETON_BONES,
   type Keypoint,
+  type PoseChecks,
+  type PoseStatus,
 } from "@/lib/poseDetection";
 
 const DETECTION_INTERVAL_MS = 200;
+const SUSTAIN_TICKS_FOR_GREEN = 5; // ~1s of steady "green" before the countdown starts
+const COUNTDOWN_STEP_MS = 700;
 const KEYPOINT_MIN_SCORE_TO_DRAW = 0.5;
+
+const STATUS_BORDER: Record<PoseStatus, string> = {
+  red: "border-red-500",
+  yellow: "border-yellow-400",
+  green: "border-green-500",
+};
+
+const STATUS_DOT: Record<PoseStatus, string> = {
+  red: "bg-red-500",
+  yellow: "bg-yellow-400",
+  green: "bg-green-500",
+};
+
+const STATUS_LABEL: Record<PoseStatus, string> = {
+  red: "Ajuste sua posição",
+  yellow: "Quase lá",
+  green: "Perfeito, segure!",
+};
+
+const CHECK_LABELS: Record<keyof Omit<PoseChecks, "bodyDetected">, string> = {
+  centered: "Centralizado",
+  fullyVisible: "Corpo inteiro",
+  properSize: "Distância",
+  armsOk: "Braços",
+};
 
 function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, keypoints: Keypoint[]) {
   const displayWidth = canvas.clientWidth;
@@ -56,19 +86,20 @@ function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, keypoi
   }
 }
 
-// Bare MediaPipe body-landmark display: camera + skeleton overlay, nothing
-// else. No scoring, no countdown, no capture — that logic was making it too
-// hard to tell whether detection itself was even working, so this step is
-// deliberately just "does MediaPipe see the body correctly."
-export function GuidedCamera() {
+export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const greenStreakRef = useRef(0);
+  const countingRef = useRef(false);
+  const capturedRef = useRef(false);
 
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
   const [error, setError] = useState("");
   const [modelLoading, setModelLoading] = useState(true);
-  const [pointsDetected, setPointsDetected] = useState(0);
+  const [status, setStatus] = useState<PoseStatus>("red");
+  const [checks, setChecks] = useState<PoseChecks | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +139,46 @@ export function GuidedCamera() {
       });
   }, []);
 
+  function cancelCountdown() {
+    countingRef.current = false;
+    setCountdown(null);
+  }
+
+  function capturePhoto() {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0) return;
+    capturedRef.current = true;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    onCapture(canvas.toDataURL("image/jpeg", 0.85));
+  }
+
+  function startCountdown() {
+    if (countingRef.current) return;
+    countingRef.current = true;
+    let n = 3;
+    setCountdown(n);
+
+    const step = () => {
+      if (!countingRef.current) return; // cancelled mid-countdown
+      n -= 1;
+      if (n <= 0) {
+        countingRef.current = false;
+        setCountdown(null);
+        capturePhoto();
+        return;
+      }
+      setCountdown(n);
+      setTimeout(step, COUNTDOWN_STEP_MS);
+    };
+    setTimeout(step, COUNTDOWN_STEP_MS);
+  }
+
   useEffect(() => {
     if (modelLoading || error) return;
     let cancelled = false;
@@ -115,15 +186,25 @@ export function GuidedCamera() {
 
     async function tick() {
       const video = videoRef.current;
-      if (video && video.readyState >= 2) {
+      if (video && video.readyState >= 2 && !capturedRef.current) {
         try {
           const landmarker = await getPoseLandmarker();
           const keypoints = detectKeypoints(landmarker, video, performance.now());
+
           if (canvasRef.current) drawSkeleton(canvasRef.current, video, keypoints);
-          if (!cancelled) {
-            setPointsDetected(
-              keypoints.filter((k) => (k.score ?? 0) >= KEYPOINT_MIN_SCORE_TO_DRAW).length,
-            );
+
+          const evaluation = evaluateFrontPose(keypoints, video.videoWidth, video.videoHeight);
+
+          if (cancelled) return;
+          setStatus(evaluation.status);
+          setChecks(evaluation.checks);
+
+          if (evaluation.status === "green") {
+            greenStreakRef.current += 1;
+            if (greenStreakRef.current >= SUSTAIN_TICKS_FOR_GREEN) startCountdown();
+          } else {
+            greenStreakRef.current = 0;
+            cancelCountdown();
           }
         } catch (err) {
           console.error("[GuidedCamera] detection tick failed", err);
@@ -137,6 +218,7 @@ export function GuidedCamera() {
       cancelled = true;
       clearTimeout(timeoutId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelLoading, error]);
 
   if (error) {
@@ -149,7 +231,9 @@ export function GuidedCamera() {
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border-4 border-hairline bg-black">
+      <div
+        className={`relative aspect-[3/4] w-full overflow-hidden rounded-2xl border-4 bg-black transition-colors duration-300 ${STATUS_BORDER[status]}`}
+      >
         <div className={`relative h-full w-full ${facingMode === "user" ? "scale-x-[-1]" : ""}`}>
           <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
@@ -158,6 +242,12 @@ export function GuidedCamera() {
         {modelLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white">
             Carregando detector…
+          </div>
+        )}
+
+        {countdown !== null && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <span className="text-display text-8xl text-white">{countdown}</span>
           </div>
         )}
 
@@ -171,9 +261,26 @@ export function GuidedCamera() {
         </button>
       </div>
 
-      <p className="mt-4 text-sm text-muted-foreground">
-        {modelLoading ? "Carregando…" : `${pointsDetected} de 13 pontos detectados`}
-      </p>
+      <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+        <span
+          className={`h-2.5 w-2.5 rounded-full transition-colors duration-300 ${STATUS_DOT[status]}`}
+        />
+        {modelLoading ? "Carregando…" : STATUS_LABEL[status]}
+      </div>
+
+      {checks && !checks.bodyDetected && (
+        <p className="mt-2 text-xs text-muted-foreground">Nenhum corpo detectado na imagem.</p>
+      )}
+
+      {checks && checks.bodyDetected && (
+        <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {(Object.keys(CHECK_LABELS) as (keyof typeof CHECK_LABELS)[]).map((key) => (
+            <span key={key} className={checks[key] ? "text-green-600" : "text-red-500"}>
+              {checks[key] ? "✓" : "✗"} {CHECK_LABELS[key]}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
