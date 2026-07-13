@@ -3,14 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   detectKeypoints,
+  evaluateFrontPose,
   getPoseLandmarker,
-  scoreFrontPose,
+  SKELETON_BONES,
+  type Keypoint,
+  type PoseChecks,
   type PoseStatus,
 } from "@/lib/poseDetection";
 
 const DETECTION_INTERVAL_MS = 200;
 const SUSTAIN_TICKS_FOR_GREEN = 4; // ~800ms of steady "green" before the countdown starts
 const COUNTDOWN_STEP_MS = 700;
+const KEYPOINT_MIN_SCORE_TO_DRAW = 0.2;
 
 const STATUS_BORDER: Record<PoseStatus, string> = {
   red: "border-red-500",
@@ -30,8 +34,68 @@ const STATUS_LABEL: Record<PoseStatus, string> = {
   green: "Perfeito, segure!",
 };
 
+const CHECK_LABELS: Record<keyof Omit<PoseChecks, "bodyDetected">, string> = {
+  centered: "Centralizado",
+  fullyVisible: "Corpo inteiro",
+  properSize: "Distância",
+  armsOk: "Braços",
+};
+
+function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, keypoints: Keypoint[]) {
+  const displayWidth = canvas.clientWidth;
+  const displayHeight = canvas.clientHeight;
+  if (displayWidth === 0 || displayHeight === 0) return;
+  if (canvas.width !== displayWidth) canvas.width = displayWidth;
+  if (canvas.height !== displayHeight) canvas.height = displayHeight;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (keypoints.length === 0 || video.videoWidth === 0) return;
+
+  // Video is displayed with object-cover, which crops rather than
+  // stretches — project keypoints the same way so dots line up with the
+  // actual body instead of drifting off it.
+  const scale = Math.max(displayWidth / video.videoWidth, displayHeight / video.videoHeight);
+  const offsetX = (video.videoWidth * scale - displayWidth) / 2;
+  const offsetY = (video.videoHeight * scale - displayHeight) / 2;
+  const project = (p: Keypoint) => ({ x: p.x * scale - offsetX, y: p.y * scale - offsetY });
+
+  const byName = new Map(keypoints.map((k) => [k.name, k]));
+
+  ctx.strokeStyle = "#22d3ee";
+  ctx.lineWidth = 3;
+  for (const [a, b] of SKELETON_BONES) {
+    const ka = byName.get(a);
+    const kb = byName.get(b);
+    if (
+      !ka ||
+      !kb ||
+      (ka.score ?? 0) < KEYPOINT_MIN_SCORE_TO_DRAW ||
+      (kb.score ?? 0) < KEYPOINT_MIN_SCORE_TO_DRAW
+    )
+      continue;
+    const pa = project(ka);
+    const pb = project(kb);
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+  }
+
+  for (const point of keypoints) {
+    if ((point.score ?? 0) < KEYPOINT_MIN_SCORE_TO_DRAW) continue;
+    const p = project(point);
+    ctx.fillStyle = "#facc15";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const greenStreakRef = useRef(0);
   const countingRef = useRef(false);
@@ -41,6 +105,7 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
   const [error, setError] = useState("");
   const [modelLoading, setModelLoading] = useState(true);
   const [status, setStatus] = useState<PoseStatus>("red");
+  const [checks, setChecks] = useState<PoseChecks | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
@@ -60,9 +125,10 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
       })
-      .catch(() =>
-        setError("Não conseguimos acessar a câmera. Verifique as permissões do navegador."),
-      );
+      .catch((err) => {
+        console.error("[GuidedCamera] getUserMedia failed", err);
+        setError("Não conseguimos acessar a câmera. Verifique as permissões do navegador.");
+      });
 
     return () => {
       cancelled = true;
@@ -74,7 +140,10 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
   useEffect(() => {
     getPoseLandmarker()
       .then(() => setModelLoading(false))
-      .catch(() => setError("Não conseguimos carregar o detector de posição."));
+      .catch((err) => {
+        console.error("[GuidedCamera] failed to load pose model", err);
+        setError("Não conseguimos carregar o detector de posição.");
+      });
   }, []);
 
   function cancelCountdown() {
@@ -128,23 +197,24 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
         try {
           const landmarker = await getPoseLandmarker();
           const keypoints = detectKeypoints(landmarker, video, performance.now());
-          const nextStatus =
-            keypoints.length > 0
-              ? scoreFrontPose(keypoints, video.videoWidth, video.videoHeight)
-              : "red";
+
+          if (canvasRef.current) drawSkeleton(canvasRef.current, video, keypoints);
+
+          const evaluation = evaluateFrontPose(keypoints, video.videoWidth, video.videoHeight);
 
           if (cancelled) return;
-          setStatus(nextStatus);
+          setStatus(evaluation.status);
+          setChecks(evaluation.checks);
 
-          if (nextStatus === "green") {
+          if (evaluation.status === "green") {
             greenStreakRef.current += 1;
             if (greenStreakRef.current >= SUSTAIN_TICKS_FOR_GREEN) startCountdown();
           } else {
             greenStreakRef.current = 0;
             cancelCountdown();
           }
-        } catch {
-          // Transient detection hiccup — try again next tick.
+        } catch (err) {
+          console.error("[GuidedCamera] detection tick failed", err);
         }
       }
       if (!cancelled) timeoutId = setTimeout(tick, DETECTION_INTERVAL_MS);
@@ -174,13 +244,10 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
       <div
         className={`relative aspect-[3/4] w-full overflow-hidden rounded-2xl border-4 bg-black transition-colors duration-300 ${STATUS_BORDER[status]}`}
       >
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`h-full w-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
-        />
+        <div className={`relative h-full w-full ${facingMode === "user" ? "scale-x-[-1]" : ""}`}>
+          <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+        </div>
 
         {modelLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white">
@@ -210,6 +277,20 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
         />
         {modelLoading ? "Carregando…" : STATUS_LABEL[status]}
       </div>
+
+      {checks && !checks.bodyDetected && (
+        <p className="mt-2 text-xs text-muted-foreground">Nenhum corpo detectado na imagem.</p>
+      )}
+
+      {checks && checks.bodyDetected && (
+        <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {(Object.keys(CHECK_LABELS) as (keyof typeof CHECK_LABELS)[]).map((key) => (
+            <span key={key} className={checks[key] ? "text-green-600" : "text-red-500"}>
+              {checks[key] ? "✓" : "✗"} {CHECK_LABELS[key]}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
