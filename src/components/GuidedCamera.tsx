@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   detectKeypoints,
   evaluateFrontPose,
+  evaluateSidePose,
   getPoseLandmarker,
   SKELETON_BONES,
   type Keypoint,
@@ -86,7 +87,13 @@ function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, keypoi
   }
 }
 
-export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => void }) {
+export function GuidedCamera({
+  mode,
+  onCapture,
+}: {
+  mode: "front" | "side";
+  onCapture: (base64: string) => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -193,7 +200,8 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
 
           if (canvasRef.current) drawSkeleton(canvasRef.current, video, keypoints);
 
-          const evaluation = evaluateFrontPose(keypoints, video.videoWidth, video.videoHeight);
+          const evaluate = mode === "front" ? evaluateFrontPose : evaluateSidePose;
+          const evaluation = evaluate(keypoints, video.videoWidth, video.videoHeight);
 
           if (cancelled) return;
           setStatus(evaluation.status);
@@ -219,7 +227,7 @@ export function GuidedCamera({ onCapture }: { onCapture: (base64: string) => voi
       clearTimeout(timeoutId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelLoading, error]);
+  }, [modelLoading, error, mode]);
 
   if (error) {
     return (

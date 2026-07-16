@@ -15,13 +15,21 @@ export const Route = createFileRoute("/")({
   component: Provador,
 });
 
-type Step = "intro" | "front_instructions" | "front_capture" | "side_instructions";
+type Step =
+  | "intro"
+  | "front_instructions"
+  | "front_capture"
+  | "side_instructions"
+  | "side_capture"
+  | "side_processing";
 
 const STEP_NUMBER: Record<Step, number> = {
   intro: 1,
   front_instructions: 2,
   front_capture: 3,
   side_instructions: 4,
+  side_capture: 5,
+  side_processing: 5,
 };
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
@@ -135,6 +143,7 @@ function Provador() {
   const [height, setHeight] = useState("170");
   const [weight, setWeight] = useState("65");
   const [frontImage, setFrontImage] = useState("");
+  const [sideImage, setSideImage] = useState("");
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -262,6 +271,7 @@ function Provador() {
 
             <div className="mt-6 w-full">
               <GuidedCamera
+                mode="front"
                 onCapture={(base64) => {
                   setFrontImage(base64);
                   setStep("side_instructions");
@@ -305,7 +315,9 @@ function Provador() {
               ))}
             </ul>
 
-            <Button className="mt-8 w-full">Continuar</Button>
+            <Button onClick={() => setStep("side_capture")} className="mt-8 w-full">
+              Continuar
+            </Button>
             <button
               type="button"
               onClick={() => setStep("front_capture")}
@@ -313,6 +325,48 @@ function Provador() {
             >
               Voltar
             </button>
+          </div>
+        )}
+
+        {step === "side_capture" && (
+          <div className="flex flex-col items-center text-center">
+            <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde, a
+              foto é tirada sozinha.
+            </p>
+
+            <div className="mt-6 w-full">
+              <GuidedCamera
+                mode="side"
+                onCapture={(base64) => {
+                  setSideImage(base64);
+                  setStep("side_processing");
+                }}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setStep("side_instructions")}
+              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
+            >
+              Ver instruções de novo
+            </button>
+          </div>
+        )}
+
+        {step === "side_processing" && (
+          <div className="flex flex-col items-center py-24 text-center">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-secondary border-t-primary" />
+            <h1 className="text-display mt-6 text-2xl text-ink">Perfil em carregamento</h1>
+            {sideImage && (
+              <img
+                src={sideImage}
+                alt="Foto de perfil capturada"
+                className="mt-6 aspect-[3/4] w-full max-w-xs rounded-2xl object-cover"
+              />
+            )}
           </div>
         )}
       </main>

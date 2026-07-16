@@ -223,3 +223,74 @@ export function evaluateFrontPose(
   const status: PoseStatus = passCount === 4 ? "green" : passCount >= 2 ? "yellow" : "red";
   return { status, checks };
 }
+
+function avgPoint(...points: (Keypoint | undefined)[]): Keypoint | undefined {
+  const valid = points.filter((p): p is Keypoint => !!p);
+  if (valid.length === 0) return undefined;
+  return {
+    x: valid.reduce((sum, p) => sum + p.x, 0) / valid.length,
+    y: valid.reduce((sum, p) => sum + p.y, 0) / valid.length,
+  };
+}
+
+// Side (profile) pose: in a true profile the left/right shoulder points
+// nearly coincide, so shoulder width isn't a usable scale reference like it
+// is for the front pose — this uses shoulder-to-hip distance instead, and
+// averages whichever left/right points are visible rather than requiring a
+// specific side (either side of the body can be the one facing camera).
+export function evaluateSidePose(
+  keypoints: Keypoint[],
+  videoWidth: number,
+  videoHeight: number,
+): PoseEvaluation {
+  const shoulder = avgPoint(kp(keypoints, "left_shoulder"), kp(keypoints, "right_shoulder"));
+  const hip = avgPoint(kp(keypoints, "left_hip"), kp(keypoints, "right_hip"));
+
+  if (!shoulder || !hip) {
+    return {
+      status: "red",
+      checks: {
+        bodyDetected: false,
+        centered: false,
+        fullyVisible: false,
+        properSize: false,
+        armsOk: false,
+      },
+    };
+  }
+
+  const ankle = avgPoint(kp(keypoints, "left_ankle"), kp(keypoints, "right_ankle"));
+  const elbow = avgPoint(kp(keypoints, "left_elbow"), kp(keypoints, "right_elbow"));
+  const wrist = avgPoint(kp(keypoints, "left_wrist"), kp(keypoints, "right_wrist"));
+  const nose = kp(keypoints, "nose");
+
+  const torsoHeight = Math.max(hip.y - shoulder.y, 1);
+  const centerX = (shoulder.x + hip.x) / 2;
+  const centered = centerX > videoWidth * 0.25 && centerX < videoWidth * 0.75;
+
+  const topY = nose ? nose.y : shoulder.y - torsoHeight * 0.8;
+  const legsVisible = !!ankle && ankle.y > hip.y + torsoHeight * 1.0;
+  const bottomY = legsVisible ? ankle!.y : undefined;
+  const fullyVisible =
+    bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.98;
+
+  const bodyHeight = bottomY !== undefined ? bottomY - topY : 0;
+  const properSize = bodyHeight > videoHeight * 0.55 && bodyHeight < videoHeight * 1.0;
+
+  // Same "traces a line down to hip height" idea as the front pose, minus
+  // the horizontal outward check (in profile, a hanging arm sits roughly
+  // in line with the torso silhouette, not out to the side).
+  const armsOk =
+    !!wrist &&
+    !!elbow &&
+    elbow.y > shoulder.y + torsoHeight * 0.15 &&
+    wrist.y > elbow.y &&
+    wrist.y > hip.y - torsoHeight * 0.5 &&
+    wrist.y < hip.y + torsoHeight * 1.0;
+
+  const checks: PoseChecks = { bodyDetected: true, centered, fullyVisible, properSize, armsOk };
+  const passCount = [centered, fullyVisible, properSize, armsOk].filter(Boolean).length;
+
+  const status: PoseStatus = passCount === 4 ? "green" : passCount >= 2 ? "yellow" : "red";
+  return { status, checks };
+}
