@@ -38,6 +38,11 @@ const STEP_NUMBER: Record<Step, number> = {
 };
 
 const POLL_INTERVAL_MS = 4_000;
+// How long a single poll attempt keeps checking before giving up and
+// showing "verificar de novo" — not how long the scan itself has to
+// finish. That distinction matters: giving up here never throws away the
+// scan (3DLOOK keeps processing it either way), so it's fine to keep this
+// modest and let the person re-check instead of staring at a spinner.
 const POLL_TIMEOUT_MS = 90_000;
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
@@ -154,6 +159,12 @@ function Provador() {
   const [sideImage, setSideImage] = useState("");
   const [result, setResult] = useState<ScanStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  // Set once createScan succeeds and kept around across a failed/timed-out
+  // poll — 3DLOOK is already processing this scan and it already cost a
+  // credit, so "verificar de novo" can just re-poll the same id instead of
+  // capturing new photos and spending another one.
+  const [taskSetId, setTaskSetId] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
     if (step !== "side_processing") return;
@@ -161,29 +172,39 @@ function Provador() {
 
     (async () => {
       try {
-        const { taskSetId } = await createScan({
-          data: {
-            gender,
-            heightCm: Number(height),
-            weightKg: Number(weight),
-            frontImageBase64: frontImage,
-            sideImageBase64: sideImage,
-          },
-        });
+        let id = taskSetId;
+        if (!id) {
+          const created = await createScan({
+            data: {
+              gender,
+              heightCm: Number(height),
+              weightKg: Number(weight),
+              frontImageBase64: frontImage,
+              sideImageBase64: sideImage,
+            },
+          });
+          if (cancelled) return;
+          id = created.taskSetId;
+          setTaskSetId(id);
+        }
 
         const startedAt = Date.now();
         let scan: ScanStatus | null = null;
         while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
           if (cancelled) return;
-          scan = await getScanResult({ data: { taskSetId } });
+          scan = await getScanResult({ data: { taskSetId: id } });
           if (scan.isReady) break;
           await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
         }
         if (cancelled) return;
 
         if (!scan?.isReady) {
-          throw new Error("Não conseguimos calcular suas medidas a tempo. Tente novamente.");
+          setTimedOut(true);
+          throw new Error(
+            'A 3DLOOK ainda está processando suas fotos. Isso não gastou um novo crédito — toque em "Verificar de novo" daqui a pouco.',
+          );
         }
+        setTimedOut(false);
         if (!scan.isSuccessful) {
           throw new Error((scan.failureMessages ?? []).join(" "));
         }
@@ -446,6 +467,8 @@ function Provador() {
                 setResult(null);
                 setFrontImage("");
                 setSideImage("");
+                setTaskSetId(null);
+                setTimedOut(false);
               }}
             >
               Fazer novo escaneamento
@@ -457,16 +480,40 @@ function Provador() {
           <div className="flex flex-col items-center py-24 text-center">
             <h1 className="text-display text-2xl text-ink">Não foi possível calcular</h1>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">{errorMessage}</p>
-            <Button
-              className="mt-8"
-              onClick={() => {
-                setStep("front_instructions");
-                setFrontImage("");
-                setSideImage("");
-              }}
-            >
-              Tentar de novo
-            </Button>
+
+            {timedOut && taskSetId ? (
+              <>
+                <Button className="mt-8 w-full" onClick={() => setStep("side_processing")}>
+                  Verificar de novo
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("front_instructions");
+                    setFrontImage("");
+                    setSideImage("");
+                    setTaskSetId(null);
+                    setTimedOut(false);
+                  }}
+                  className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
+                >
+                  Recomeçar do zero
+                </button>
+              </>
+            ) : (
+              <Button
+                className="mt-8"
+                onClick={() => {
+                  setStep("front_instructions");
+                  setFrontImage("");
+                  setSideImage("");
+                  setTaskSetId(null);
+                  setTimedOut(false);
+                }}
+              >
+                Tentar de novo
+              </Button>
+            )}
           </div>
         )}
       </main>
