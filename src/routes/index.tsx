@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import type { Gender } from "@/lib/threedlook";
+import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
+import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
 import poseFrontAvatar from "@/assets/pose-front-avatar.jpg";
 import poseSideAvatar from "@/assets/pose-side-avatar.jpg";
@@ -21,7 +22,9 @@ type Step =
   | "front_capture"
   | "side_instructions"
   | "side_capture"
-  | "side_processing";
+  | "side_processing"
+  | "result"
+  | "error";
 
 const STEP_NUMBER: Record<Step, number> = {
   intro: 1,
@@ -30,7 +33,12 @@ const STEP_NUMBER: Record<Step, number> = {
   side_instructions: 4,
   side_capture: 5,
   side_processing: 5,
+  result: 5,
+  error: 5,
 };
+
+const POLL_INTERVAL_MS = 4_000;
+const POLL_TIMEOUT_MS = 90_000;
 
 function GenderSelect({ value, onChange }: { value: Gender; onChange: (g: Gender) => void }) {
   const options: { value: Gender; label: string }[] = [
@@ -144,6 +152,56 @@ function Provador() {
   const [weight, setWeight] = useState("65");
   const [frontImage, setFrontImage] = useState("");
   const [sideImage, setSideImage] = useState("");
+  const [result, setResult] = useState<ScanStatus | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (step !== "side_processing") return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { taskSetId } = await createScan({
+          data: {
+            gender,
+            heightCm: Number(height),
+            weightKg: Number(weight),
+            frontImageBase64: frontImage,
+            sideImageBase64: sideImage,
+          },
+        });
+
+        const startedAt = Date.now();
+        let scan: ScanStatus | null = null;
+        while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+          if (cancelled) return;
+          scan = await getScanResult({ data: { taskSetId } });
+          if (scan.isReady) break;
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        }
+        if (cancelled) return;
+
+        if (!scan?.isReady) {
+          throw new Error("Não conseguimos calcular suas medidas a tempo. Tente novamente.");
+        }
+        if (!scan.isSuccessful) {
+          throw new Error((scan.failureMessages ?? []).join(" "));
+        }
+
+        setResult(scan);
+        setStep("result");
+      } catch (err) {
+        if (cancelled) return;
+        setErrorMessage(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
+        setStep("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -359,14 +417,56 @@ function Provador() {
         {step === "side_processing" && (
           <div className="flex flex-col items-center py-24 text-center">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-secondary border-t-primary" />
-            <h1 className="text-display mt-6 text-2xl text-ink">Perfil em carregamento</h1>
-            {sideImage && (
-              <img
-                src={sideImage}
-                alt="Foto de perfil capturada"
-                className="mt-6 aspect-[3/4] w-full max-w-xs rounded-2xl object-cover"
-              />
-            )}
+            <h1 className="text-display mt-6 text-2xl text-ink">Calculando suas medidas</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Isso pode levar até 90 segundos.</p>
+          </div>
+        )}
+
+        {step === "result" && result && (
+          <div>
+            <div className="text-mono mb-2 text-primary">Pronto</div>
+            <h1 className="text-display text-4xl text-ink">Suas medidas</h1>
+
+            <div className="mt-8 divide-y hairline rounded-2xl border hairline">
+              {Object.entries({ ...result.volumeParams, ...result.frontParams })
+                .filter(([key, value]) => isDisplayableMeasurement(key, value))
+                .map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between px-5 py-4">
+                    <span className="text-sm text-foreground">{MEASUREMENT_LABELS[key]}</span>
+                    <span className="text-display text-lg text-primary">{value} cm</span>
+                  </div>
+                ))}
+            </div>
+
+            <Button
+              variant="outline"
+              className="mt-8"
+              onClick={() => {
+                setStep("intro");
+                setResult(null);
+                setFrontImage("");
+                setSideImage("");
+              }}
+            >
+              Fazer novo escaneamento
+            </Button>
+          </div>
+        )}
+
+        {step === "error" && (
+          <div className="flex flex-col items-center py-24 text-center">
+            <h1 className="text-display text-2xl text-ink">Não foi possível calcular</h1>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">{errorMessage}</p>
+            <Button
+              className="mt-8"
+              onClick={() => {
+                setStep("front_instructions");
+                setFrontImage("");
+                setSideImage("");
+              }}
+            >
+              Tentar de novo
+            </Button>
           </div>
         )}
       </main>
