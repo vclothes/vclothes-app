@@ -18,6 +18,32 @@ function stripDataUrlPrefix(base64: string) {
   return base64.startsWith("data:") && commaIndex !== -1 ? base64.slice(commaIndex + 1) : base64;
 }
 
+// Plain fetch() has no timeout — if 3DLOOK's server never responds, the
+// request (and everything awaiting it, all the way up to the UI showing
+// "Perfil em carregamento") just hangs forever with no way out. This gives
+// every call a hard ceiling so a slow/unresponsive upstream turns into a
+// clear error instead of an infinite spinner.
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(
+        `A 3DLOOK não respondeu em ${Math.round(timeoutMs / 1000)}s. Tente novamente.`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Human-friendly translations for the failure messages 3DLOOK's sub_tasks return.
 // Falls back to the raw message if we don't recognize it.
 const KNOWN_FAILURE_MESSAGES: Record<string, string> = {
@@ -51,17 +77,21 @@ export type ScanStatus = {
 export const createScan = createServerFn({ method: "POST" })
   .validator((data: CreateScanInput) => data)
   .handler(async ({ data }): Promise<CreateScanResult> => {
-    const response = await fetch(`${API_BASE}/persons/`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        gender: data.gender,
-        height: Math.round(data.heightCm),
-        weight: data.weightKg,
-        front_image: stripDataUrlPrefix(data.frontImageBase64),
-        side_image: stripDataUrlPrefix(data.sideImageBase64),
-      }),
-    });
+    const response = await fetchWithTimeout(
+      `${API_BASE}/persons/`,
+      {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          gender: data.gender,
+          height: Math.round(data.heightCm),
+          weight: data.weightKg,
+          front_image: stripDataUrlPrefix(data.frontImageBase64),
+          side_image: stripDataUrlPrefix(data.sideImageBase64),
+        }),
+      },
+      30_000,
+    );
 
     const body = await response.json().catch(() => null);
 
@@ -86,9 +116,11 @@ export const createScan = createServerFn({ method: "POST" })
 export const getScanResult = createServerFn({ method: "GET" })
   .validator((data: { taskSetId: string }) => data)
   .handler(async ({ data }): Promise<ScanStatus> => {
-    const queueResponse = await fetch(`${API_BASE}/queue/${data.taskSetId}/`, {
-      headers: authHeaders(),
-    });
+    const queueResponse = await fetchWithTimeout(
+      `${API_BASE}/queue/${data.taskSetId}/`,
+      { headers: authHeaders() },
+      20_000,
+    );
     const queueBody = await queueResponse.json().catch(() => null);
 
     if (!queueResponse.ok) {
@@ -117,9 +149,10 @@ export const getScanResult = createServerFn({ method: "GET" })
       };
     }
 
-    const personsResponse = await fetch(
+    const personsResponse = await fetchWithTimeout(
       `${API_BASE}/persons/?task_set_url__icontains=${data.taskSetId}&measurements_type=all`,
       { headers: authHeaders() },
+      20_000,
     );
     const personsBody = await personsResponse.json().catch(() => null);
 
