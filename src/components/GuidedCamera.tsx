@@ -39,6 +39,7 @@ const CHECK_LABELS: Record<keyof Omit<PoseChecks, "bodyDetected">, string> = {
   fullyVisible: "Corpo inteiro",
   properSize: "Distância",
   armsOk: "Braços",
+  facingAngle: "Ângulo",
 };
 
 function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, keypoints: Keypoint[]) {

@@ -128,6 +128,7 @@ export type PoseChecks = {
   fullyVisible: boolean;
   properSize: boolean;
   armsOk: boolean;
+  facingAngle: boolean;
 };
 
 export type PoseEvaluation = { status: PoseStatus; checks: PoseChecks };
@@ -156,6 +157,7 @@ export function evaluateFrontPose(
         fullyVisible: false,
         properSize: false,
         armsOk: false,
+        facingAngle: false,
       },
     };
   }
@@ -173,8 +175,13 @@ export function evaluateFrontPose(
   const hipMidY = (leftHip.y + rightHip.y) / 2;
   const centerX = (shoulderMidX + hipMidX) / 2;
   const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
+  const torsoHeight = Math.max(hipMidY - Math.min(leftShoulder.y, rightShoulder.y), 1);
 
   const centered = centerX > videoWidth * 0.25 && centerX < videoWidth * 0.75;
+  // Facing the camera: shoulders should read as clearly wider than they are
+  // tall relative to the torso — someone turned to profile collapses the
+  // shoulder-to-shoulder distance down toward the side-pose case below.
+  const facingAngle = shoulderWidth > torsoHeight * 0.4;
 
   const topY = nose ? nose.y : Math.min(leftShoulder.y, rightShoulder.y) - shoulderWidth * 0.6;
   // Ankles need to be both confidently detected AND clearly below the hips
@@ -214,10 +221,19 @@ export function evaluateFrontPose(
     armOk(leftWrist, leftElbow, leftHip, leftShoulder) &&
     armOk(rightWrist, rightElbow, rightHip, rightShoulder);
 
-  const checks: PoseChecks = { bodyDetected: true, centered, fullyVisible, properSize, armsOk };
-  const passCount = [centered, fullyVisible, properSize, armsOk].filter(Boolean).length;
+  const checks: PoseChecks = {
+    bodyDetected: true,
+    centered,
+    fullyVisible,
+    properSize,
+    armsOk,
+    facingAngle,
+  };
+  const passCount = [centered, fullyVisible, properSize, armsOk, facingAngle].filter(
+    Boolean,
+  ).length;
 
-  const status: PoseStatus = passCount === 4 ? "green" : passCount >= 2 ? "yellow" : "red";
+  const status: PoseStatus = passCount === 5 ? "green" : passCount >= 3 ? "yellow" : "red";
   return { status, checks };
 }
 
@@ -240,7 +256,9 @@ export function evaluateSidePose(
   videoWidth: number,
   videoHeight: number,
 ): PoseEvaluation {
-  const shoulder = avgPoint(kp(keypoints, "left_shoulder"), kp(keypoints, "right_shoulder"));
+  const leftShoulderRaw = kp(keypoints, "left_shoulder");
+  const rightShoulderRaw = kp(keypoints, "right_shoulder");
+  const shoulder = avgPoint(leftShoulderRaw, rightShoulderRaw);
   const hip = avgPoint(kp(keypoints, "left_hip"), kp(keypoints, "right_hip"));
 
   if (!shoulder || !hip) {
@@ -252,6 +270,7 @@ export function evaluateSidePose(
         fullyVisible: false,
         properSize: false,
         armsOk: false,
+        facingAngle: false,
       },
     };
   }
@@ -264,6 +283,14 @@ export function evaluateSidePose(
   const torsoHeight = Math.max(hip.y - shoulder.y, 1);
   const centerX = (shoulder.x + hip.x) / 2;
   const centered = centerX > videoWidth * 0.25 && centerX < videoWidth * 0.75;
+
+  // In a true profile the two shoulders nearly coincide in x. If both are
+  // confidently detected and clearly apart, the person is still facing the
+  // camera head-on, not turned to the side — this is what was missing
+  // before: nothing here actually checked the person had turned at all.
+  const shoulderSeparation =
+    leftShoulderRaw && rightShoulderRaw ? Math.abs(leftShoulderRaw.x - rightShoulderRaw.x) : 0;
+  const facingAngle = shoulderSeparation < torsoHeight * 0.35;
 
   const topY = nose ? nose.y : shoulder.y - torsoHeight * 0.8;
   const legsVisible = !!ankle && ankle.y > hip.y + torsoHeight * 1.0;
@@ -279,9 +306,18 @@ export function evaluateSidePose(
   // was rejecting normal poses).
   const armsOk = !!wrist && !!elbow && elbow.y > shoulder.y && wrist.y > elbow.y;
 
-  const checks: PoseChecks = { bodyDetected: true, centered, fullyVisible, properSize, armsOk };
-  const passCount = [centered, fullyVisible, properSize, armsOk].filter(Boolean).length;
+  const checks: PoseChecks = {
+    bodyDetected: true,
+    centered,
+    fullyVisible,
+    properSize,
+    armsOk,
+    facingAngle,
+  };
+  const passCount = [centered, fullyVisible, properSize, armsOk, facingAngle].filter(
+    Boolean,
+  ).length;
 
-  const status: PoseStatus = passCount === 4 ? "green" : passCount >= 2 ? "yellow" : "red";
+  const status: PoseStatus = passCount === 5 ? "green" : passCount >= 3 ? "yellow" : "red";
   return { status, checks };
 }
