@@ -189,33 +189,30 @@ export function evaluateFrontPose(
     bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.98;
 
   const bodyHeight = bottomY !== undefined ? bottomY - topY : 0;
-  const properSize = bodyHeight > videoHeight * 0.55 && bodyHeight < videoHeight * 1.0;
+  const properSize = bodyHeight > videoHeight * 0.45 && bodyHeight < videoHeight * 1.0;
 
-  // A hanging arm: elbow noticeably below the shoulder, wrist below the
-  // elbow (roughly straight down), and the wrist ending up near hip height
-  // — not up near the chest, which is what crossed or bent arms look like.
+  // A hanging arm: elbow below the shoulder, wrist below the elbow (bends
+  // downward, not up toward the chest — that's what crossed/raised arms
+  // look like), with the hand held at least a little away from the torso.
+  // Deliberately doesn't require the wrist to land at any specific height —
+  // that turned out to reject perfectly normal relaxed poses whenever one
+  // side was a few percent off from the other (real photos are never
+  // perfectly symmetric).
   function armOk(
     wrist: Keypoint | undefined,
     elbow: Keypoint | undefined,
-    shoulder: Keypoint,
     hip: Keypoint,
+    shoulder: Keypoint,
   ) {
     if (!wrist || !elbow) return false;
     const outward = Math.abs(wrist.x - hip.x);
-    const extendsDown = elbow.y > shoulder.y + shoulderWidth * 0.15 && wrist.y > elbow.y;
-    const wristNearHipHeight =
-      wrist.y > hipMidY - shoulderWidth * 0.6 && wrist.y < hipMidY + shoulderWidth * 1.3;
-    return (
-      extendsDown &&
-      wristNearHipHeight &&
-      outward > shoulderWidth * 0.1 &&
-      outward < shoulderWidth * 0.55
-    );
+    const bendsDown = elbow.y > shoulder.y && wrist.y > elbow.y;
+    return bendsDown && outward > shoulderWidth * 0.05 && outward < shoulderWidth * 0.9;
   }
 
   const armsOk =
-    armOk(leftWrist, leftElbow, leftShoulder, leftHip) &&
-    armOk(rightWrist, rightElbow, rightShoulder, rightHip);
+    armOk(leftWrist, leftElbow, leftHip, leftShoulder) &&
+    armOk(rightWrist, rightElbow, rightHip, rightShoulder);
 
   const checks: PoseChecks = { bodyDetected: true, centered, fullyVisible, properSize, armsOk };
   const passCount = [centered, fullyVisible, properSize, armsOk].filter(Boolean).length;
@@ -275,18 +272,12 @@ export function evaluateSidePose(
     bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.98;
 
   const bodyHeight = bottomY !== undefined ? bottomY - topY : 0;
-  const properSize = bodyHeight > videoHeight * 0.55 && bodyHeight < videoHeight * 1.0;
+  const properSize = bodyHeight > videoHeight * 0.45 && bodyHeight < videoHeight * 1.0;
 
-  // Same "traces a line down to hip height" idea as the front pose, minus
-  // the horizontal outward check (in profile, a hanging arm sits roughly
-  // in line with the torso silhouette, not out to the side).
-  const armsOk =
-    !!wrist &&
-    !!elbow &&
-    elbow.y > shoulder.y + torsoHeight * 0.15 &&
-    wrist.y > elbow.y &&
-    wrist.y > hip.y - torsoHeight * 0.5 &&
-    wrist.y < hip.y + torsoHeight * 1.0;
+  // Same "bends downward, doesn't need to land at a specific height" idea
+  // as the front pose (see the comment there for why the stricter version
+  // was rejecting normal poses).
+  const armsOk = !!wrist && !!elbow && elbow.y > shoulder.y && wrist.y > elbow.y;
 
   const checks: PoseChecks = { bodyDetected: true, centered, fullyVisible, properSize, armsOk };
   const passCount = [centered, fullyVisible, properSize, armsOk].filter(Boolean).length;
