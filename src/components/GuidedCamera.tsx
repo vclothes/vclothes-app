@@ -10,11 +10,16 @@ import {
   type PoseChecks,
   type PoseStatus,
 } from "@/lib/poseDetection";
+import { cancelSpeech, pickGuidanceMessage, speak } from "@/lib/voiceGuidance";
 
 const DETECTION_INTERVAL_MS = 200;
 const SUSTAIN_TICKS_FOR_GREEN = 5; // ~1s of steady "green" before the countdown starts
 const COUNTDOWN_STEP_MS = 700;
 const KEYPOINT_MIN_SCORE_TO_DRAW = 0.5;
+// How long to wait before repeating the exact same spoken instruction —
+// long enough not to nag, short enough to work as a reminder if the first
+// one wasn't heard (phone being repositioned, ambient noise, etc.).
+const VOICE_REPEAT_MS = 5_000;
 
 const STATUS_BORDER: Record<PoseStatus, string> = {
   red: "border-red-500",
@@ -101,6 +106,9 @@ export function GuidedCamera({
   const greenStreakRef = useRef(0);
   const countingRef = useRef(false);
   const capturedRef = useRef(false);
+  const lastSpokenMessageRef = useRef("");
+  const lastSpokenAtRef = useRef(0);
+  const mutedRef = useRef(false);
 
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
   const [error, setError] = useState("");
@@ -108,6 +116,30 @@ export function GuidedCamera({
   const [status, setStatus] = useState<PoseStatus>("red");
   const [checks, setChecks] = useState<PoseChecks | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    if (muted) cancelSpeech();
+  }, [muted]);
+
+  useEffect(() => {
+    return () => cancelSpeech();
+  }, []);
+
+  function maybeSpeak(message: string) {
+    if (mutedRef.current) return;
+    const now = Date.now();
+    if (
+      message === lastSpokenMessageRef.current &&
+      now - lastSpokenAtRef.current < VOICE_REPEAT_MS
+    ) {
+      return;
+    }
+    lastSpokenMessageRef.current = message;
+    lastSpokenAtRef.current = now;
+    speak(message);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +203,7 @@ export function GuidedCamera({
     countingRef.current = true;
     let n = 3;
     setCountdown(n);
+    if (!mutedRef.current) speak(String(n));
 
     const step = () => {
       if (!countingRef.current) return; // cancelled mid-countdown
@@ -182,6 +215,7 @@ export function GuidedCamera({
         return;
       }
       setCountdown(n);
+      if (!mutedRef.current) speak(String(n));
       setTimeout(step, COUNTDOWN_STEP_MS);
     };
     setTimeout(step, COUNTDOWN_STEP_MS);
@@ -207,6 +241,13 @@ export function GuidedCamera({
           if (cancelled) return;
           setStatus(evaluation.status);
           setChecks(evaluation.checks);
+
+          // Once the countdown is running the pose is already confirmed
+          // green — let "3, 2, 1" play uninterrupted instead of competing
+          // with the regular guidance message.
+          if (!countingRef.current) {
+            maybeSpeak(pickGuidanceMessage(evaluation.checks, evaluation.status, mode));
+          }
 
           if (evaluation.status === "green") {
             greenStreakRef.current += 1;
@@ -259,6 +300,15 @@ export function GuidedCamera({
             <span className="text-display text-8xl text-white">{countdown}</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={() => setMuted((m) => !m)}
+          aria-label={muted ? "Ativar instruções por voz" : "Desativar instruções por voz"}
+          className="absolute left-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-lg text-white"
+        >
+          {muted ? "🔇" : "🔊"}
+        </button>
 
         <button
           type="button"
