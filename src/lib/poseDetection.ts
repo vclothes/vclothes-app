@@ -192,8 +192,12 @@ export function evaluateFrontPose(
     !!rightAnkle &&
     Math.min(leftAnkle.y, rightAnkle.y) > hipMidY + shoulderWidth * 1.2;
   const bottomY = legsVisible ? Math.max(leftAnkle!.y, rightAnkle!.y) : undefined;
+  // The ankle joint sits above the sole of the foot — MediaPipe places it
+  // correctly at the shin/foot junction, but that's not "the bottom of the
+  // person." Require real clearance below it (not just inside the frame)
+  // so the actual foot has somewhere to be instead of getting clipped.
   const fullyVisible =
-    bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.98;
+    bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.9;
 
   const bodyHeight = bottomY !== undefined ? bottomY - topY : 0;
   const properSize = bodyHeight > videoHeight * 0.45 && bodyHeight < videoHeight * 1.0;
@@ -295,8 +299,10 @@ export function evaluateSidePose(
   const topY = nose ? nose.y : shoulder.y - torsoHeight * 0.8;
   const legsVisible = !!ankle && ankle.y > hip.y + torsoHeight * 1.0;
   const bottomY = legsVisible ? ankle!.y : undefined;
+  // Same reasoning as the front pose: leave real room below the ankle for
+  // the actual foot, not just enough to keep the joint itself in frame.
   const fullyVisible =
-    bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.98;
+    bottomY !== undefined && topY > videoHeight * 0.02 && bottomY < videoHeight * 0.9;
 
   const bodyHeight = bottomY !== undefined ? bottomY - topY : 0;
   const properSize = bodyHeight > videoHeight * 0.45 && bodyHeight < videoHeight * 1.0;
