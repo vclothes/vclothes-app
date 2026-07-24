@@ -119,7 +119,13 @@ export const createScan = createServerFn({ method: "POST" })
     return { taskSetId };
   });
 
-export const getScanResult = createServerFn({ method: "GET" })
+// POST, not GET, even though this only reads data: the taskSetId is the same
+// on every poll, so a GET server function hits the exact same URL over and
+// over — and TanStack Start's GET fetch path doesn't disable HTTP caching,
+// so a browser (mobile ones especially) can just keep serving the first
+// "not ready yet" response forever, even long after 3DLOOK actually
+// finishes. POST is never cached, which sidesteps the whole problem.
+export const getScanResult = createServerFn({ method: "POST" })
   .validator((data: { taskSetId: string }) => data)
   .handler(async ({ data }): Promise<ScanStatus> => {
     const queueResponse = await fetchWithTimeout(
