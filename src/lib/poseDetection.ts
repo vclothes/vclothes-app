@@ -183,7 +183,18 @@ export function evaluateFrontPose(
   // shoulder-to-shoulder distance down toward the side-pose case below.
   const facingAngle = shoulderWidth > torsoHeight * 0.4;
 
-  const topY = nose ? nose.y : Math.min(leftShoulder.y, rightShoulder.y) - shoulderWidth * 0.6;
+  // The nose sits partway down the face, not at the top of the head — hair
+  // and scalp extend further up than that. Using the raw nose position as
+  // "the top of the person" left almost no real margin (a flat 2% of frame
+  // height), so a photo could read as "fully visible" while the actual top
+  // of the head was already cropped out. This estimates real head height
+  // from shoulder width (the same ratio the old no-nose fallback used) and
+  // subtracts it either way, so both branches agree on where the head
+  // actually starts.
+  const headHeightEstimate = shoulderWidth * 0.6;
+  const topY = nose
+    ? nose.y - headHeightEstimate
+    : Math.min(leftShoulder.y, rightShoulder.y) - headHeightEstimate;
   // Ankles need to be both confidently detected AND clearly below the hips
   // — a seated or table-occluded person can still produce a low-but-passable
   // ankle guess near hip height, which isn't actually "legs visible."
@@ -296,7 +307,12 @@ export function evaluateSidePose(
     leftShoulderRaw && rightShoulderRaw ? Math.abs(leftShoulderRaw.x - rightShoulderRaw.x) : 0;
   const facingAngle = shoulderSeparation < torsoHeight * 0.35;
 
-  const topY = nose ? nose.y : shoulder.y - torsoHeight * 0.8;
+  // Same reasoning as the front pose: the nose isn't the top of the head,
+  // so both branches estimate real head height and subtract it — here from
+  // torso height, since shoulder width isn't a usable scale reference in
+  // profile (the shoulders foreshorten toward each other).
+  const headHeightEstimate = torsoHeight * 0.35;
+  const topY = nose ? nose.y - headHeightEstimate : shoulder.y - headHeightEstimate;
   const legsVisible = !!ankle && ankle.y > hip.y + torsoHeight * 1.0;
   const bottomY = legsVisible ? ankle!.y : undefined;
   // Same reasoning as the front pose: leave real room below the ankle for
