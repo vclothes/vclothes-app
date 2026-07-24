@@ -45,14 +45,26 @@ export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
         controls.autoRotate = true;
         controls.autoRotateSpeed = 2.2;
         controls.enablePan = false;
-        controls.minDistance = 1;
-        controls.maxDistance = 6;
 
         const material = new THREE.MeshStandardMaterial({
-          color: 0x2a4fa0,
-          roughness: 0.55,
-          metalness: 0.05,
+          color: 0xb7bcc4,
+          roughness: 0.7,
+          metalness: 0.02,
         });
+
+        function shadowTexture() {
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 256;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return new THREE.CanvasTexture(canvas);
+          const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+          gradient.addColorStop(0, "rgba(0,0,0,0.35)");
+          gradient.addColorStop(0.7, "rgba(0,0,0,0.12)");
+          gradient.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, 256, 256);
+          return new THREE.CanvasTexture(canvas);
+        }
 
         const loader = new OBJLoader();
         loader.load(
@@ -66,18 +78,50 @@ export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
               }
             });
 
-            // Center the mesh and frame it regardless of the units/scale
-            // 3DLOOK exported it at.
+            // Center the mesh horizontally and rest its feet on y=0, regardless
+            // of the units/scale 3DLOOK exported it at (their .obj files are in
+            // millimeters, not meters, confirmed by inspecting a real file — a
+            // person ~1780 units tall).
             const box = new THREE.Box3().setFromObject(object);
             const size = new THREE.Vector3();
             const center = new THREE.Vector3();
             box.getSize(size);
             box.getCenter(center);
-            object.position.sub(center);
+            object.position.x -= center.x;
+            object.position.z -= center.z;
+            object.position.y -= box.min.y;
 
             const maxDim = Math.max(size.x, size.y, size.z) || 1;
-            camera.position.set(0, size.y * 0.05, maxDim * 1.8);
-            controls.target.set(0, 0, 0);
+
+            // Ground shadow ellipse under the feet, matching 3DLOOK's own viewer.
+            const shadow = new THREE.Mesh(
+              new THREE.PlaneGeometry(maxDim * 0.9, maxDim * 0.5),
+              new THREE.MeshBasicMaterial({
+                map: shadowTexture(),
+                transparent: true,
+                depthWrite: false,
+              }),
+            );
+            shadow.rotation.x = -Math.PI / 2;
+            shadow.position.set(0, maxDim * 0.001, 0);
+            scene.add(shadow);
+
+            // Near/far and orbit distance limits scale with the model's own size
+            // instead of assuming meter-scale units (the old 0.1–100 / 1–6 range
+            // clipped the whole mesh at mm scale).
+            camera.near = maxDim * 0.01;
+            camera.far = maxDim * 20;
+            camera.updateProjectionMatrix();
+            controls.minDistance = maxDim * 0.6;
+            controls.maxDistance = maxDim * 4;
+
+            const targetY = size.y * 0.5;
+            const fovRad = (camera.fov * Math.PI) / 180;
+            const distanceForHeight = size.y / 2 / Math.tan(fovRad / 2);
+            const distanceForWidth = size.x / 2 / Math.tan(fovRad / 2) / camera.aspect;
+            const distance = Math.max(distanceForHeight, distanceForWidth) * 1.35;
+            camera.position.set(0, targetY, distance);
+            controls.target.set(0, targetY, 0);
             controls.update();
 
             scene.add(object);
@@ -119,7 +163,13 @@ export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
           material.dispose();
           scene.traverse((child: InstanceType<typeof THREE.Object3D>) => {
             const mesh = child as InstanceType<typeof THREE.Mesh>;
-            if (mesh.isMesh) mesh.geometry?.dispose();
+            if (!mesh.isMesh) return;
+            mesh.geometry?.dispose();
+            if (mesh.material !== material) {
+              const meshMaterial = mesh.material as InstanceType<typeof THREE.MeshBasicMaterial>;
+              meshMaterial.map?.dispose();
+              meshMaterial.dispose();
+            }
           });
           if (renderer.domElement.parentElement === container) {
             container.removeChild(renderer.domElement);

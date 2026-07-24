@@ -467,8 +467,23 @@ function Provador() {
 
         {step === "avatar" && result && (
           <div>
-            <div className="text-mono mb-2 text-primary">Seu avatar</div>
-            <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-mono mb-2 text-primary">Seu avatar</div>
+                <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
+              </div>
+              {result.modelUrl && (
+                <a
+                  href={result.modelUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 shrink-0 text-sm text-primary hover:underline"
+                >
+                  ↓ Baixar
+                </a>
+              )}
+            </div>
             <p className="mt-3 text-muted-foreground">
               Gerado a partir das suas duas fotos. Arraste para girar.
             </p>
