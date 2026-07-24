@@ -49,6 +49,8 @@ async function fetchWithTimeout(
 const KNOWN_FAILURE_MESSAGES: Record<string, string> = {
   "Can't detect the human body":
     "Não conseguimos identificar um corpo na foto. Tente novamente com boa iluminação, fundo liso e o corpo inteiro visível.",
+  "The body is not full":
+    "Uma das fotos não mostrava o corpo inteiro (provavelmente os pés ou a cabeça ficaram fora do quadro). Afaste-se mais da câmera e tente novamente.",
 };
 
 export type Gender = "male" | "female";
