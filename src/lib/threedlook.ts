@@ -72,6 +72,10 @@ export type ScanStatus = {
   frontParams?: Record<string, number | null>;
   sideParams?: Record<string, number | null>;
   failureMessages?: string[];
+  // The .obj 3D mesh 3DLOOK generates from the two photos. Not in their
+  // public API docs — found by inspecting a real person record directly:
+  // it's volume_params.body_model, an S3 URL with open CORS.
+  modelUrl?: string;
 };
 
 export const createScan = createServerFn({ method: "POST" })
@@ -170,5 +174,6 @@ export const getScanResult = createServerFn({ method: "GET" })
       volumeParams: person?.volume_params,
       frontParams: person?.front_params,
       sideParams: person?.side_params,
+      modelUrl: person?.volume_params?.body_model ?? undefined,
     };
   });

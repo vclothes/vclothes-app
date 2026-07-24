@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { AvatarViewer } from "@/components/AvatarViewer";
 import { Button } from "@/components/ui/button";
 import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ type Step =
   | "side_capture"
   | "side_processing"
   | "result"
+  | "avatar"
   | "error";
 
 const STEP_NUMBER: Record<Step, number> = {
@@ -34,6 +36,7 @@ const STEP_NUMBER: Record<Step, number> = {
   side_capture: 5,
   side_processing: 5,
   result: 5,
+  avatar: 6,
   error: 5,
 };
 
@@ -454,6 +457,30 @@ function Provador() {
                     <span className="text-display text-lg text-primary">{value} cm</span>
                   </div>
                 ))}
+            </div>
+
+            <Button className="mt-8" onClick={() => setStep("avatar")}>
+              Próximo
+            </Button>
+          </div>
+        )}
+
+        {step === "avatar" && result && (
+          <div>
+            <div className="text-mono mb-2 text-primary">Seu avatar</div>
+            <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
+            <p className="mt-3 text-muted-foreground">
+              Gerado a partir das suas duas fotos. Arraste para girar.
+            </p>
+
+            <div className="mt-8">
+              {result.modelUrl ? (
+                <AvatarViewer modelUrl={result.modelUrl} />
+              ) : (
+                <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                  A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
+                </div>
+              )}
             </div>
 
             <Button
