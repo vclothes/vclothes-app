@@ -119,12 +119,17 @@ export const createScan = createServerFn({ method: "POST" })
     return { taskSetId };
   });
 
-// POST, not GET, even though this only reads data: the taskSetId is the same
-// on every poll, so a GET server function hits the exact same URL over and
-// over — and TanStack Start's GET fetch path doesn't disable HTTP caching,
-// so a browser (mobile ones especially) can just keep serving the first
-// "not ready yet" response forever, even long after 3DLOOK actually
-// finishes. POST is never cached, which sidesteps the whole problem.
+function extractFailureMessages(subTasks: { message?: string }[] | undefined): string[] {
+  const messages = (subTasks ?? [])
+    .map((t) => t.message)
+    .filter((m): m is string => Boolean(m))
+    .map((m) => KNOWN_FAILURE_MESSAGES[m] ?? m);
+  return messages.length > 0 ? messages : ["O escaneamento falhou. Tente novamente."];
+}
+
+// POST, not GET, even though this only reads data — same reasoning as
+// createScan being POST: keeps this off any HTTP cache path, which matters
+// for a polling call hitting the same URL repeatedly.
 export const getScanResult = createServerFn({ method: "POST" })
   .validator((data: { taskSetId: string }) => data)
   .handler(async ({ data }): Promise<ScanStatus> => {
@@ -133,55 +138,62 @@ export const getScanResult = createServerFn({ method: "POST" })
       { headers: authHeaders() },
       20_000,
     );
-    const queueBody = await queueResponse.json().catch(() => null);
+    const body = await queueResponse.json().catch(() => null);
 
     if (!queueResponse.ok) {
       throw new Error(
-        `Falha ao consultar status do escaneamento (${queueResponse.status}): ${JSON.stringify(queueBody)}`,
+        `Falha ao consultar status do escaneamento (${queueResponse.status}): ${JSON.stringify(body)}`,
       );
     }
 
-    if (!queueBody?.is_ready) {
-      return { isReady: false };
-    }
-
-    if (!queueBody.is_successful) {
-      const failureMessages = (queueBody.sub_tasks ?? [])
-        .map((t: { message?: string }) => t.message)
-        .filter((m: string | undefined): m is string => Boolean(m))
-        .map((m: string) => KNOWN_FAILURE_MESSAGES[m] ?? m);
-
+    // Undocumented but real behavior, found by reading 3DLOOK's own docs
+    // directly instead of guessing: when a scan finishes successfully, this
+    // endpoint doesn't return a JSON status body at all — it 303-redirects
+    // straight to the finished person resource. fetch() follows that
+    // automatically, so `body` here is already the *person* record in that
+    // case, not the queue status object. The bug this replaces: the old
+    // code always read `body.is_ready` at the top level, which is where a
+    // queue status puts it but a person record doesn't (it's nested under
+    // `task_set.is_ready` there) — so a finished scan silently read as
+    // "not ready" forever, no matter how many times it polled, with no
+    // error at all. A separate, undocumented `/persons/?task_set_url__…`
+    // lookup used to run after this to fetch the measurements — no longer
+    // needed, since the redirect already hands us the full person record.
+    if (body?.task_set) {
+      const taskSet = body.task_set;
+      if (!taskSet.is_successful) {
+        return {
+          isReady: true,
+          isSuccessful: false,
+          failureMessages: extractFailureMessages(taskSet.sub_tasks),
+        };
+      }
       return {
         isReady: true,
-        isSuccessful: false,
-        failureMessages:
-          failureMessages.length > 0
-            ? failureMessages
-            : ["O escaneamento falhou. Tente novamente."],
+        isSuccessful: true,
+        volumeParams: body.volume_params,
+        frontParams: body.front_params,
+        sideParams: body.side_params,
+        modelUrl: body.volume_params?.body_model ?? undefined,
       };
     }
 
-    const personsResponse = await fetchWithTimeout(
-      `${API_BASE}/persons/?task_set_url__icontains=${data.taskSetId}&measurements_type=all`,
-      { headers: authHeaders() },
-      20_000,
-    );
-    const personsBody = await personsResponse.json().catch(() => null);
-
-    if (!personsResponse.ok) {
-      throw new Error(
-        `Falha ao buscar medidas (${personsResponse.status}): ${JSON.stringify(personsBody)}`,
-      );
+    if (!body?.is_ready) {
+      return { isReady: false };
     }
 
-    const person = personsBody?.results?.[0];
+    // Ready but no redirect happened, i.e. failed — the documented case for
+    // a plain (non-redirected) status body.
+    if (!body.is_successful) {
+      return {
+        isReady: true,
+        isSuccessful: false,
+        failureMessages: extractFailureMessages(body.sub_tasks),
+      };
+    }
 
-    return {
-      isReady: true,
-      isSuccessful: true,
-      volumeParams: person?.volume_params,
-      frontParams: person?.front_params,
-      sideParams: person?.side_params,
-      modelUrl: person?.volume_params?.body_model ?? undefined,
-    };
+    // Ready + successful without a task_set shouldn't happen per how 3DLOOK
+    // documents this endpoint — keep polling rather than surfacing an error
+    // for a state that isn't actually a failure.
+    return { isReady: false };
   });
