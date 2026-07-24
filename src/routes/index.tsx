@@ -26,6 +26,7 @@ type Step =
   | "side_processing"
   | "result"
   | "avatar"
+  | "done"
   | "error";
 
 const STEP_NUMBER: Record<Step, number> = {
@@ -37,6 +38,7 @@ const STEP_NUMBER: Record<Step, number> = {
   side_processing: 5,
   result: 5,
   avatar: 6,
+  done: 7,
   error: 5,
 };
 
@@ -467,23 +469,8 @@ function Provador() {
 
         {step === "avatar" && result && (
           <div>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-mono mb-2 text-primary">Seu avatar</div>
-                <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
-              </div>
-              {result.modelUrl && (
-                <a
-                  href={result.modelUrl}
-                  download
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 shrink-0 text-sm text-primary hover:underline"
-                >
-                  ↓ Baixar
-                </a>
-              )}
-            </div>
+            <div className="text-mono mb-2 text-primary">Seu avatar</div>
+            <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
             <p className="mt-3 text-muted-foreground">
               Gerado a partir das suas duas fotos. Arraste para girar.
             </p>
@@ -498,6 +485,16 @@ function Provador() {
               )}
             </div>
 
+            <div className="mt-8 flex justify-center">
+              <Button onClick={() => setStep("done")}>Próximo</Button>
+            </div>
+          </div>
+        )}
+
+        {step === "done" && (
+          <div className="flex flex-col items-center py-24 text-center">
+            <div className="text-mono mb-2 text-primary">Tudo pronto</div>
+            <h1 className="text-display text-4xl text-ink">Obrigado!</h1>
             <Button
               variant="outline"
               className="mt-8"
