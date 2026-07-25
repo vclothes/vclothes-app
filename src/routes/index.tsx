@@ -21,7 +21,9 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  saveAvatarSkinTone,
   saveUserScanResult,
+  SKIN_TONE_PRESETS,
   validatePassword,
 } from "@/lib/auth";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
@@ -238,6 +240,15 @@ function Provador() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [bagCount, setBagCount] = useState(0);
   const [productQuery, setProductQuery] = useState("");
+  const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
+  const [showCustomize, setShowCustomize] = useState(false);
+
+  function handlePickSkinTone(tone: string) {
+    setSkinTone(tone);
+    saveAvatarSkinTone({ data: { skinTone: tone } }).catch((err) =>
+      console.error("[Provador] failed to save skin tone", err),
+    );
+  }
 
   function toggleFavorite(id: string) {
     setFavorites((prev) => {
@@ -264,6 +275,7 @@ function Provador() {
         if (cancelled) return;
         if (user) {
           if (user.scanResult) setResult(user.scanResult);
+          if (user.skinTone) setSkinTone(user.skinTone);
           setStep(user.hasScan ? "shop" : "intro");
         }
       } finally {
@@ -292,6 +304,7 @@ function Provador() {
       const submit = authMode === "login" ? loginUser : registerUser;
       const user = await submit({ data: { username: authUsername, password: authPassword } });
       if (user.scanResult) setResult(user.scanResult);
+      if (user.skinTone) setSkinTone(user.skinTone);
       setStep(user.hasScan ? "shop" : "intro");
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
@@ -757,9 +770,37 @@ function Provador() {
                   Gerado a partir das suas duas fotos. Arraste para girar.
                 </p>
 
+                <button
+                  type="button"
+                  onClick={() => setShowCustomize((v) => !v)}
+                  className="mt-4 text-sm text-primary hover:underline"
+                >
+                  {showCustomize ? "Fechar personalização" : "Personalizar avatar"}
+                </button>
+
+                {showCustomize && (
+                  <div className="mt-3 rounded-2xl border hairline bg-card p-4">
+                    <div className="text-xs text-muted-foreground">Tom de pele</div>
+                    <div className="mt-3 flex gap-3">
+                      {SKIN_TONE_PRESETS.map((tone) => (
+                        <button
+                          key={tone}
+                          type="button"
+                          onClick={() => handlePickSkinTone(tone)}
+                          aria-label={`Tom de pele ${tone}`}
+                          className={`h-9 w-9 shrink-0 rounded-full border-2 ${
+                            skinTone === tone ? "border-primary" : "border-transparent"
+                          }`}
+                          style={{ backgroundColor: tone }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-8">
                   {result?.modelUrl ? (
-                    <AvatarViewer modelUrl={result.modelUrl} />
+                    <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
                   ) : (
                     <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
                       A 3DLOOK não devolveu um modelo 3D para esse escaneamento.

@@ -2,13 +2,27 @@ import { useEffect, useRef, useState } from "react";
 
 import { loadThree } from "@/lib/modelViewer";
 
+// Minimal structural type instead of importing Three.js's real types —
+// this is CDN-loaded (see lib/modelViewer.ts), not an npm dependency, so
+// there's nothing to import statically. All that's needed here is the one
+// method used to retint the material live.
+type TintedMaterial = { color: { set: (value: string) => void } };
+
 // Renders the .obj mesh 3DLOOK generates from the two photos (see
 // volume_params.body_model in the person record — not documented in their
 // public API docs, found by inspecting a real successful scan directly).
-// It has no texture/color baked in, so this gives it a plain matte
-// material rather than showing an untextured-white blob.
-export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
+// It has no texture/color baked in, so this gives it a flat color instead
+// of showing an untextured-white blob — `color` is how the skin tone
+// picker retints it.
+export function AvatarViewer({
+  modelUrl,
+  color = "#b7bcc4",
+}: {
+  modelUrl: string;
+  color?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const materialRef = useRef<TintedMaterial | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -47,10 +61,11 @@ export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
         controls.enablePan = false;
 
         const material = new THREE.MeshStandardMaterial({
-          color: 0xb7bcc4,
+          color,
           roughness: 0.7,
           metalness: 0.02,
         });
+        materialRef.current = material;
 
         function shadowTexture() {
           const canvas = document.createElement("canvas");
@@ -161,6 +176,7 @@ export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
           controls.dispose();
           renderer.dispose();
           material.dispose();
+          materialRef.current = null;
           scene.traverse((child: InstanceType<typeof THREE.Object3D>) => {
             const mesh = child as InstanceType<typeof THREE.Mesh>;
             if (!mesh.isMesh) return;
@@ -188,7 +204,15 @@ export function AvatarViewer({ modelUrl }: { modelUrl: string }) {
       cancelled = true;
       cleanup?.();
     };
+    // `color` is only read as the material's initial value here — changing
+    // the skin tone shouldn't reload the whole model, so it's applied via
+    // the effect below instead of being a dependency of this one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl]);
+
+  useEffect(() => {
+    materialRef.current?.color.set(color);
+  }, [color]);
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-2xl border hairline bg-secondary">

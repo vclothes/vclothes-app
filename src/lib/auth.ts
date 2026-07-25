@@ -33,7 +33,20 @@ type StoredUser = {
   salt: string;
   createdAt: string;
   scanResult?: ScanStatus;
+  skinTone?: string;
 };
+
+// Shared with the swatch picker on the avatar screen — kept as a fixed set
+// (rather than a free color picker) so the server can validate against it
+// instead of trusting an arbitrary string.
+export const SKIN_TONE_PRESETS = [
+  "#f2d3b3",
+  "#e5b88b",
+  "#c98a5c",
+  "#a56b3e",
+  "#74462c",
+  "#4a2c1a",
+] as const;
 
 function userKey(username: string) {
   return `user:${username}`;
@@ -88,7 +101,12 @@ async function hashPassword(password: string, saltHex: string): Promise<string> 
   return bytesToHex(new Uint8Array(derived));
 }
 
-export type AuthResult = { username: string; hasScan: boolean; scanResult?: ScanStatus };
+export type AuthResult = {
+  username: string;
+  hasScan: boolean;
+  scanResult?: ScanStatus;
+  skinTone?: string;
+};
 
 // Shared between the server check and the client-side hint on the signup
 // form, so the two can't drift out of sync. Special characters are never
@@ -150,7 +168,12 @@ export const loginUser = createServerFn({ method: "POST" })
     }
 
     await updateSession<SessionData>(sessionConfig(), { username });
-    return { username, hasScan: !!user.scanResult, scanResult: user.scanResult };
+    return {
+      username,
+      hasScan: !!user.scanResult,
+      scanResult: user.scanResult,
+      skinTone: user.skinTone,
+    };
   });
 
 export const logoutUser = createServerFn({ method: "POST" }).handler(async (): Promise<void> => {
@@ -168,7 +191,12 @@ export const getCurrentUser = createServerFn({ method: "POST" }).handler(
     if (!raw) return null;
 
     const user = JSON.parse(raw) as StoredUser;
-    return { username: user.username, hasScan: !!user.scanResult, scanResult: user.scanResult };
+    return {
+      username: user.username,
+      hasScan: !!user.scanResult,
+      scanResult: user.scanResult,
+      skinTone: user.skinTone,
+    };
   },
 );
 
@@ -189,5 +217,27 @@ export const saveUserScanResult = createServerFn({ method: "POST" })
 
     const user = JSON.parse(raw) as StoredUser;
     user.scanResult = data.scanResult;
+    await kv.put(userKey(username), JSON.stringify(user));
+  });
+
+export const saveAvatarSkinTone = createServerFn({ method: "POST" })
+  .validator((data: { skinTone: string }) => data)
+  .handler(async ({ data }): Promise<void> => {
+    if (!(SKIN_TONE_PRESETS as readonly string[]).includes(data.skinTone)) {
+      throw new Error("Tom de pele inválido.");
+    }
+
+    const session = await getSession<SessionData>(sessionConfig());
+    const username = session.data.username;
+    if (!username) throw new Error("Não autenticado.");
+
+    const kv = getCloudflareEnv()?.VCLOTHES_SCANS;
+    if (!kv) throw new Error("Armazenamento indisponível no servidor.");
+
+    const raw = await kv.get(userKey(username));
+    if (!raw) throw new Error("Usuário não encontrado.");
+
+    const user = JSON.parse(raw) as StoredUser;
+    user.skinTone = data.skinTone;
     await kv.put(userKey(username), JSON.stringify(user));
   });
