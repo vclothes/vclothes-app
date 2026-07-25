@@ -18,6 +18,8 @@ import {
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
+
+const LANDING_PAGE_URL = "https://v-clothes.henriquecgfarias.workers.dev/";
 import poseFrontAvatar from "@/assets/pose-front-avatar.jpg";
 import poseSideAvatar from "@/assets/pose-side-avatar.jpg";
 import garmentJacket from "@/assets/garment-jacket.png";
@@ -385,14 +387,16 @@ function Provador() {
       ) : (
         <header className="border-b hairline">
           <div className="mx-auto flex h-18 max-w-3xl items-center px-6">
-            <img
-              src={logoVClothes}
-              alt="V-Clothes"
-              className="h-8 w-8 object-contain"
-              width={1024}
-              height={1024}
-            />
-            <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
+            <a href={LANDING_PAGE_URL} className="flex items-center">
+              <img
+                src={logoVClothes}
+                alt="V-Clothes"
+                className="h-8 w-8 object-contain"
+                width={1024}
+                height={1024}
+              />
+              <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
+            </a>
             {step !== "login" && (
               <span className="text-mono ml-auto text-muted-foreground">
                 Passo {STEP_NUMBER[step]}
