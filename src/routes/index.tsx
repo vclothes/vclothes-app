@@ -97,6 +97,7 @@ type Step =
   | "result"
   | "avatar"
   | "customize"
+  | "hair"
   | "shop"
   | "looks"
   | "error";
@@ -112,6 +113,7 @@ const STEP_NUMBER: Record<Step, number> = {
   result: 5,
   avatar: 6,
   customize: 6,
+  hair: 6,
   shop: 7,
   looks: 7,
   error: 5,
@@ -391,7 +393,11 @@ function Provador() {
     Number(weight) <= 200;
 
   const isShopSection =
-    step === "shop" || step === "avatar" || step === "customize" || step === "looks";
+    step === "shop" ||
+    step === "avatar" ||
+    step === "customize" ||
+    step === "hair" ||
+    step === "looks";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -837,6 +843,28 @@ function Provador() {
                     ))}
                   </div>
                 </div>
+
+                <div className="mt-8 flex justify-center">
+                  <Button onClick={() => setStep("hair")}>Próximo</Button>
+                </div>
+              </div>
+            )}
+
+            {step === "hair" && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setStep("customize")}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:underline"
+                >
+                  ← Voltar
+                </button>
+
+                <div className="text-mono mb-2 mt-5 text-primary">Personalização</div>
+                <h1 className="text-display text-4xl text-ink">Cabelo</h1>
+                <p className="mt-3 text-muted-foreground">
+                  Em breve você vai poder escolher entre cabelo curto, médio e longo.
+                </p>
               </div>
             )}
 
@@ -988,7 +1016,9 @@ function Provador() {
               type="button"
               onClick={() => setStep("avatar")}
               className={`flex flex-col items-center gap-1 py-3 text-xs ${
-                step === "avatar" || step === "customize" ? "text-ink" : "text-muted-foreground"
+                step === "avatar" || step === "customize" || step === "hair"
+                  ? "text-ink"
+                  : "text-muted-foreground"
               }`}
             >
               <UserRound className="h-5 w-5" />
