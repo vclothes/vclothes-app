@@ -220,10 +220,15 @@ export const saveUserScanResult = createServerFn({ method: "POST" })
     await kv.put(userKey(username), JSON.stringify(user));
   });
 
+// `skinTone: null` means "Padrão" — reset to the default untinted look,
+// rather than picking one of the presets.
 export const saveAvatarSkinTone = createServerFn({ method: "POST" })
-  .validator((data: { skinTone: string }) => data)
+  .validator((data: { skinTone: string | null }) => data)
   .handler(async ({ data }): Promise<void> => {
-    if (!(SKIN_TONE_PRESETS as readonly string[]).includes(data.skinTone)) {
+    if (
+      data.skinTone !== null &&
+      !(SKIN_TONE_PRESETS as readonly string[]).includes(data.skinTone)
+    ) {
       throw new Error("Tom de pele inválido.");
     }
 
@@ -238,6 +243,10 @@ export const saveAvatarSkinTone = createServerFn({ method: "POST" })
     if (!raw) throw new Error("Usuário não encontrado.");
 
     const user = JSON.parse(raw) as StoredUser;
-    user.skinTone = data.skinTone;
+    if (data.skinTone === null) {
+      delete user.skinTone;
+    } else {
+      user.skinTone = data.skinTone;
+    }
     await kv.put(userKey(username), JSON.stringify(user));
   });

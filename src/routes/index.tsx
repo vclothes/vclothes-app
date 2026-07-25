@@ -96,6 +96,7 @@ type Step =
   | "side_processing"
   | "result"
   | "avatar"
+  | "customize"
   | "shop"
   | "looks"
   | "error";
@@ -110,6 +111,7 @@ const STEP_NUMBER: Record<Step, number> = {
   side_processing: 5,
   result: 5,
   avatar: 6,
+  customize: 6,
   shop: 7,
   looks: 7,
   error: 5,
@@ -241,10 +243,9 @@ function Provador() {
   const [bagCount, setBagCount] = useState(0);
   const [productQuery, setProductQuery] = useState("");
   const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
-  const [showCustomize, setShowCustomize] = useState(false);
 
-  function handlePickSkinTone(tone: string) {
-    setSkinTone(tone);
+  function handlePickSkinTone(tone: string | null) {
+    setSkinTone(tone ?? undefined);
     saveAvatarSkinTone({ data: { skinTone: tone } }).catch((err) =>
       console.error("[Provador] failed to save skin tone", err),
     );
@@ -389,7 +390,8 @@ function Provador() {
     Number(weight) >= 30 &&
     Number(weight) <= 200;
 
-  const isShopSection = step === "shop" || step === "avatar" || step === "looks";
+  const isShopSection =
+    step === "shop" || step === "avatar" || step === "customize" || step === "looks";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -770,34 +772,6 @@ function Provador() {
                   Gerado a partir das suas duas fotos. Arraste para girar.
                 </p>
 
-                <button
-                  type="button"
-                  onClick={() => setShowCustomize((v) => !v)}
-                  className="mt-4 text-sm text-primary hover:underline"
-                >
-                  {showCustomize ? "Fechar personalização" : "Personalizar avatar"}
-                </button>
-
-                {showCustomize && (
-                  <div className="mt-3 rounded-2xl border hairline bg-card p-4">
-                    <div className="text-xs text-muted-foreground">Tom de pele</div>
-                    <div className="mt-3 flex gap-3">
-                      {SKIN_TONE_PRESETS.map((tone) => (
-                        <button
-                          key={tone}
-                          type="button"
-                          onClick={() => handlePickSkinTone(tone)}
-                          aria-label={`Tom de pele ${tone}`}
-                          className={`h-9 w-9 shrink-0 rounded-full border-2 ${
-                            skinTone === tone ? "border-primary" : "border-transparent"
-                          }`}
-                          style={{ backgroundColor: tone }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div className="mt-8">
                   {result?.modelUrl ? (
                     <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
@@ -806,6 +780,62 @@ function Provador() {
                       A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
                     </div>
                   )}
+                </div>
+
+                <div className="mt-6 flex justify-center">
+                  <Button onClick={() => setStep("customize")}>Personalizar avatar</Button>
+                </div>
+              </div>
+            )}
+
+            {step === "customize" && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setStep("avatar")}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:underline"
+                >
+                  ← Voltar
+                </button>
+
+                <div className="text-mono mb-2 mt-5 text-primary">Personalização</div>
+                <h1 className="text-display text-4xl text-ink">Seu avatar</h1>
+
+                <div className="mt-6">
+                  {result?.modelUrl ? (
+                    <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
+                  ) : (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-7">
+                  <div className="text-sm font-semibold text-ink">Cor</div>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handlePickSkinTone(null)}
+                      aria-label="Tom de pele padrão"
+                      title="Padrão"
+                      className={`h-10 w-10 shrink-0 rounded-full border-2 bg-[repeating-conic-gradient(var(--secondary)_0%_25%,var(--card)_0%_50%)] bg-[length:8px_8px] ${
+                        skinTone === undefined ? "border-primary" : "border-dashed border-border"
+                      }`}
+                    />
+                    {SKIN_TONE_PRESETS.map((tone) => (
+                      <button
+                        key={tone}
+                        type="button"
+                        onClick={() => handlePickSkinTone(tone)}
+                        aria-label={`Tom de pele ${tone}`}
+                        className={`h-10 w-10 shrink-0 rounded-full border-2 ${
+                          skinTone === tone ? "border-primary" : "border-transparent"
+                        }`}
+                        style={{ backgroundColor: tone }}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -958,7 +988,7 @@ function Provador() {
               type="button"
               onClick={() => setStep("avatar")}
               className={`flex flex-col items-center gap-1 py-3 text-xs ${
-                step === "avatar" ? "text-ink" : "text-muted-foreground"
+                step === "avatar" || step === "customize" ? "text-ink" : "text-muted-foreground"
               }`}
             >
               <UserRound className="h-5 w-5" />
