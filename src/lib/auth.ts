@@ -88,7 +88,7 @@ async function hashPassword(password: string, saltHex: string): Promise<string> 
   return bytesToHex(new Uint8Array(derived));
 }
 
-export type AuthResult = { username: string; hasScan: boolean };
+export type AuthResult = { username: string; hasScan: boolean; scanResult?: ScanStatus };
 
 // Shared between the server check and the client-side hint on the signup
 // form, so the two can't drift out of sync. Special characters are never
@@ -150,7 +150,7 @@ export const loginUser = createServerFn({ method: "POST" })
     }
 
     await updateSession<SessionData>(sessionConfig(), { username });
-    return { username, hasScan: !!user.scanResult };
+    return { username, hasScan: !!user.scanResult, scanResult: user.scanResult };
   });
 
 export const logoutUser = createServerFn({ method: "POST" }).handler(async (): Promise<void> => {
@@ -168,7 +168,7 @@ export const getCurrentUser = createServerFn({ method: "POST" }).handler(
     if (!raw) return null;
 
     const user = JSON.parse(raw) as StoredUser;
-    return { username: user.username, hasScan: !!user.scanResult };
+    return { username: user.username, hasScan: !!user.scanResult, scanResult: user.scanResult };
   },
 );
 

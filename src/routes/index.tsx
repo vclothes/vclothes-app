@@ -1,6 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Heart, Search, Shirt, ShoppingBag, SlidersHorizontal, Sparkles } from "lucide-react";
+import {
+  Heart,
+  Search,
+  Shirt,
+  ShoppingBag,
+  SlidersHorizontal,
+  Sparkles,
+  UserRound,
+} from "lucide-react";
 
 import { AvatarViewer } from "@/components/AvatarViewer";
 import { Button } from "@/components/ui/button";
@@ -254,7 +262,10 @@ function Provador() {
       try {
         const user = await getCurrentUser();
         if (cancelled) return;
-        if (user) setStep(user.hasScan ? "shop" : "intro");
+        if (user) {
+          if (user.scanResult) setResult(user.scanResult);
+          setStep(user.hasScan ? "shop" : "intro");
+        }
       } finally {
         if (!cancelled) setAuthChecked(true);
       }
@@ -280,6 +291,7 @@ function Provador() {
     try {
       const submit = authMode === "login" ? loginUser : registerUser;
       const user = await submit({ data: { username: authUsername, password: authPassword } });
+      if (user.scanResult) setResult(user.scanResult);
       setStep(user.hasScan ? "shop" : "intro");
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
@@ -364,7 +376,7 @@ function Provador() {
     Number(weight) >= 30 &&
     Number(weight) <= 200;
 
-  const isShopSection = step === "shop" || step === "looks";
+  const isShopSection = step === "shop" || step === "avatar" || step === "looks";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -731,13 +743,13 @@ function Provador() {
                     ))}
                 </div>
 
-                <Button className="mt-8" onClick={() => setStep("avatar")}>
+                <Button className="mt-8" onClick={() => setStep("shop")}>
                   Próximo
                 </Button>
               </div>
             )}
 
-            {step === "avatar" && result && (
+            {step === "avatar" && (
               <div>
                 <div className="text-mono mb-2 text-primary">Seu avatar</div>
                 <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
@@ -746,17 +758,13 @@ function Provador() {
                 </p>
 
                 <div className="mt-8">
-                  {result.modelUrl ? (
+                  {result?.modelUrl ? (
                     <AvatarViewer modelUrl={result.modelUrl} />
                   ) : (
                     <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
                       A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
                     </div>
                   )}
-                </div>
-
-                <div className="mt-8 flex justify-center">
-                  <Button onClick={() => setStep("shop")}>Próximo</Button>
                 </div>
               </div>
             )}
@@ -884,7 +892,7 @@ function Provador() {
 
       {isShopSection && (
         <nav className="fixed inset-x-0 bottom-0 border-t hairline bg-card">
-          <div className="mx-auto grid max-w-3xl grid-cols-2">
+          <div className="mx-auto grid max-w-3xl grid-cols-3">
             <button
               type="button"
               onClick={() => setStep("shop")}
@@ -904,6 +912,16 @@ function Provador() {
             >
               <Sparkles className="h-5 w-5" />
               Looks
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep("avatar")}
+              className={`flex flex-col items-center gap-1 py-3 text-xs ${
+                step === "avatar" ? "text-ink" : "text-muted-foreground"
+              }`}
+            >
+              <UserRound className="h-5 w-5" />
+              Avatar
             </button>
           </div>
         </nav>
