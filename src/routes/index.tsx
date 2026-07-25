@@ -14,6 +14,7 @@ import {
   logoutUser,
   registerUser,
   saveUserScanResult,
+  validatePassword,
 } from "@/lib/auth";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
@@ -266,6 +267,15 @@ function Provador() {
   async function handleAuthSubmit(e: React.FormEvent) {
     e.preventDefault();
     setAuthError("");
+
+    if (authMode === "register") {
+      const passwordError = validatePassword(authPassword);
+      if (passwordError) {
+        setAuthError(passwordError);
+        return;
+      }
+    }
+
     setAuthLoading(true);
     try {
       const submit = authMode === "login" ? loginUser : registerUser;
@@ -444,8 +454,15 @@ function Provador() {
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                      minLength={authMode === "register" ? 6 : undefined}
                       required
                     />
+                    {authMode === "register" && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Mínimo de 6 caracteres, com pelo menos um número. Caracteres especiais são
+                        permitidos.
+                      </p>
+                    )}
                   </div>
 
                   {authError && <p className="text-sm text-destructive">{authError}</p>}

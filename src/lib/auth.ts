@@ -90,6 +90,16 @@ async function hashPassword(password: string, saltHex: string): Promise<string> 
 
 export type AuthResult = { username: string; hasScan: boolean };
 
+// Shared between the server check and the client-side hint on the signup
+// form, so the two can't drift out of sync. Special characters are never
+// required, just never blocked (no restriction on which characters are
+// allowed at all).
+export function validatePassword(password: string): string | null {
+  if (password.length < 6) return "A senha precisa ter pelo menos 6 caracteres.";
+  if (!/\d/.test(password)) return "A senha precisa ter pelo menos um número.";
+  return null;
+}
+
 // POST, not GET, even for the calls that only read — same reasoning as
 // getScanResult: keeps every one of these off any HTTP cache path.
 export const registerUser = createServerFn({ method: "POST" })
@@ -99,9 +109,8 @@ export const registerUser = createServerFn({ method: "POST" })
     if (username.length < 3) {
       throw new Error("O usuário precisa ter pelo menos 3 caracteres.");
     }
-    if (data.password.length < 4) {
-      throw new Error("A senha precisa ter pelo menos 4 caracteres.");
-    }
+    const passwordError = validatePassword(data.password);
+    if (passwordError) throw new Error(passwordError);
 
     const kv = getCloudflareEnv()?.VCLOTHES_SCANS;
     if (!kv) throw new Error("Armazenamento indisponível no servidor.");
