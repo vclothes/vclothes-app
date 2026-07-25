@@ -8,6 +8,13 @@ import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import {
+  getCurrentUser,
+  loginUser,
+  logoutUser,
+  registerUser,
+  saveUserScanResult,
+} from "@/lib/auth";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
@@ -67,6 +74,7 @@ export const Route = createFileRoute("/")({
 });
 
 type Step =
+  | "login"
   | "intro"
   | "front_instructions"
   | "front_capture"
@@ -80,6 +88,7 @@ type Step =
   | "error";
 
 const STEP_NUMBER: Record<Step, number> = {
+  login: 0,
   intro: 1,
   front_instructions: 2,
   front_capture: 3,
@@ -200,7 +209,13 @@ const SIDE_PHOTO_TIPS = [
 ];
 
 function Provador() {
-  const [step, setStep] = useState<Step>("intro");
+  const [step, setStep] = useState<Step>("login");
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const [name, setName] = useState("");
   const [gender, setGender] = useState<Gender>("female");
   const [height, setHeight] = useState("170");
@@ -225,6 +240,51 @@ function Provador() {
   const filteredProducts = PRODUCTS.filter((product) =>
     `${product.brand} ${product.name}`.toLowerCase().includes(productQuery.toLowerCase()),
   );
+
+  // Runs once on load — if there's already a valid session cookie, skip the
+  // login screen entirely and go straight to wherever this person left off,
+  // instead of asking them to log in again (and definitely instead of
+  // letting them restart the photo flow and burn another credit).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        if (cancelled) return;
+        if (user) setStep(user.hasScan ? "shop" : "intro");
+      } finally {
+        if (!cancelled) setAuthChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleAuthSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const submit = authMode === "login" ? loginUser : registerUser;
+      const user = await submit({ data: { username: authUsername, password: authPassword } });
+      setStep(user.hasScan ? "shop" : "intro");
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await logoutUser().catch(() => {});
+    setStep("login");
+    setResult(null);
+    setFrontImage("");
+    setSideImage("");
+    setAuthUsername("");
+    setAuthPassword("");
+  }
 
   useEffect(() => {
     if (step !== "side_processing") return;
@@ -267,6 +327,11 @@ function Provador() {
 
         setResult(scan);
         setStep("result");
+        // Fire-and-forget: the scan already succeeded and is already on
+        // screen, so a hiccup saving it shouldn't turn into an error state.
+        saveUserScanResult({ data: { scanResult: scan } }).catch((saveErr) =>
+          console.error("[Provador] failed to save scan result to account", saveErr),
+        );
       } catch (err) {
         if (cancelled) return;
         setErrorMessage(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
@@ -298,13 +363,22 @@ function Provador() {
               <div className="text-mono text-primary">V-Clothes</div>
               <h1 className="text-display text-3xl text-ink">Descubra seu estilo</h1>
             </div>
-            <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-background">
-              <ShoppingBag className="h-5 w-5" />
-              {bagCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
-                  {bagCount}
-                </span>
-              )}
+            <div className="flex shrink-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="text-sm text-muted-foreground hover:underline"
+              >
+                Sair
+              </button>
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-ink text-background">
+                <ShoppingBag className="h-5 w-5" />
+                {bagCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+                    {bagCount}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -319,9 +393,11 @@ function Provador() {
               height={1024}
             />
             <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
-            <span className="text-mono ml-auto text-muted-foreground">
-              Passo {STEP_NUMBER[step]}
-            </span>
+            {step !== "login" && (
+              <span className="text-mono ml-auto text-muted-foreground">
+                Passo {STEP_NUMBER[step]}
+              </span>
+            )}
           </div>
         </header>
       )}
@@ -329,376 +405,459 @@ function Provador() {
       <main
         className={`mx-auto w-full flex-1 px-6 ${isShopSection ? "max-w-3xl py-8 pb-28" : "max-w-md py-12"}`}
       >
-        {step === "intro" && (
-          <div>
-            <h1 className="text-display text-4xl text-ink">Suas informações</h1>
-            <p className="mt-3 text-muted-foreground">
-              Esses dados ajudam a calibrar a escala das suas medidas.
-            </p>
-
-            <div className="mt-8 flex flex-col gap-6">
-              <div>
-                <Label htmlFor="name" className="mb-3 block">
-                  Nome
-                </Label>
-                <Input
-                  id="name"
-                  placeholder="Seu nome"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label className="mb-3 block">Gênero</Label>
-                <GenderSelect value={gender} onChange={setGender} />
-              </div>
-
-              <NumberStepper
-                label="Altura"
-                unit="cm"
-                value={height}
-                onChange={setHeight}
-                min={120}
-                max={220}
-              />
-              <NumberStepper
-                label="Peso"
-                unit="kg"
-                value={weight}
-                onChange={setWeight}
-                min={30}
-                max={200}
-              />
-
-              <Button
-                disabled={!canContinueFromIntro}
-                onClick={() => setStep("front_instructions")}
-                className="mt-2"
-              >
-                Continuar
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {step === "front_instructions" && (
-          <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-4xl text-ink">Foto de frente</h1>
-            <p className="mt-3 text-muted-foreground">
-              Vamos te guiar pra tirar uma boa foto de frente. Confira as dicas antes de começar.
-            </p>
-
-            <div className="mt-8 overflow-hidden rounded-2xl bg-secondary">
-              <img
-                src={poseFrontAvatar}
-                alt="Referência da pose de frente"
-                className="h-64 w-auto"
-              />
-            </div>
-
-            <ul className="mt-8 flex w-full flex-col gap-3 text-left">
-              {FRONT_PHOTO_TIPS.map((tip) => (
-                <li key={tip} className="flex gap-3 text-sm text-foreground">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-medium text-primary-foreground">
-                    ✓
-                  </span>
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
-
-            <Button onClick={() => setStep("front_capture")} className="mt-8 w-full">
-              Continuar
-            </Button>
-            <button
-              type="button"
-              onClick={() => setStep("intro")}
-              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
-            >
-              Voltar
-            </button>
-          </div>
-        )}
-
-        {step === "front_capture" && (
-          <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde, a
-              foto é tirada sozinha.
-            </p>
-
-            <div className="mt-6 w-full">
-              <GuidedCamera
-                mode="front"
-                onCapture={(base64) => {
-                  setFrontImage(base64);
-                  setStep("side_instructions");
-                }}
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setStep("front_instructions")}
-              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
-            >
-              Ver instruções de novo
-            </button>
-          </div>
-        )}
-
-        {step === "side_instructions" && (
-          <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-4xl text-ink">Foto de perfil</h1>
-            <p className="mt-3 text-muted-foreground">
-              Foto de frente ok! Agora vamos tirar sua foto de perfil (de lado).
-            </p>
-
-            <div className="mt-8 overflow-hidden rounded-2xl bg-secondary">
-              <img
-                src={poseSideAvatar}
-                alt="Referência da pose de perfil"
-                className="h-64 w-auto"
-              />
-            </div>
-
-            <ul className="mt-8 flex w-full flex-col gap-3 text-left">
-              {SIDE_PHOTO_TIPS.map((tip) => (
-                <li key={tip} className="flex gap-3 text-sm text-foreground">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-medium text-primary-foreground">
-                    ✓
-                  </span>
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
-
-            <Button onClick={() => setStep("side_capture")} className="mt-8 w-full">
-              Continuar
-            </Button>
-            <button
-              type="button"
-              onClick={() => setStep("front_capture")}
-              className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
-            >
-              Voltar
-            </button>
-          </div>
-        )}
-
-        {step === "side_capture" && (
-          <div className="flex flex-col items-center text-center">
-            <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde, a
-              foto é tirada sozinha.
-            </p>
-
-            <div className="mt-6 w-full">
-              <GuidedCamera
-                mode="side"
-                onCapture={(base64) => {
-                  setSideImage(base64);
-                  setStep("side_processing");
-                }}
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setStep("side_instructions")}
-              className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
-            >
-              Ver instruções de novo
-            </button>
-          </div>
-        )}
-
-        {step === "side_processing" && (
+        {!authChecked ? (
           <div className="flex flex-col items-center py-24 text-center">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-secondary border-t-primary" />
-            <h1 className="text-display mt-6 text-2xl text-ink">Calculando suas medidas</h1>
-            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-              Pode demorar alguns minutos — vamos esperar o tempo que precisar.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setStep("front_instructions");
-                setFrontImage("");
-                setSideImage("");
-              }}
-              className="mt-8 block text-center text-sm text-muted-foreground hover:underline"
-            >
-              Cancelar
-            </button>
           </div>
-        )}
+        ) : (
+          <>
+            {step === "login" && (
+              <div>
+                <div className="text-mono mb-2 text-primary">Bem-vindo</div>
+                <h1 className="text-display text-4xl text-ink">
+                  {authMode === "login" ? "Entrar" : "Criar conta"}
+                </h1>
+                <p className="mt-3 text-muted-foreground">
+                  {authMode === "login"
+                    ? "Entre para continuar de onde parou."
+                    : "Crie sua conta para começar a experimentar."}
+                </p>
 
-        {step === "result" && result && (
-          <div>
-            <div className="text-mono mb-2 text-primary">Pronto</div>
-            <h1 className="text-display text-4xl text-ink">Suas medidas</h1>
-
-            <div className="mt-8 divide-y hairline rounded-2xl border hairline">
-              {Object.entries({ ...result.volumeParams, ...result.frontParams })
-                .filter(([key, value]) => isDisplayableMeasurement(key, value))
-                .map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between px-5 py-4">
-                    <span className="text-sm text-foreground">{MEASUREMENT_LABELS[key]}</span>
-                    <span className="text-display text-lg text-primary">{value} cm</span>
-                  </div>
-                ))}
-            </div>
-
-            <Button className="mt-8" onClick={() => setStep("avatar")}>
-              Próximo
-            </Button>
-          </div>
-        )}
-
-        {step === "avatar" && result && (
-          <div>
-            <div className="text-mono mb-2 text-primary">Seu avatar</div>
-            <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
-            <p className="mt-3 text-muted-foreground">
-              Gerado a partir das suas duas fotos. Arraste para girar.
-            </p>
-
-            <div className="mt-8">
-              {result.modelUrl ? (
-                <AvatarViewer modelUrl={result.modelUrl} />
-              ) : (
-                <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
-                  A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
-                </div>
-              )}
-            </div>
-
-            <div className="mt-8 flex justify-center">
-              <Button onClick={() => setStep("shop")}>Próximo</Button>
-            </div>
-          </div>
-        )}
-
-        {step === "shop" && (
-          <div>
-            <div className="flex items-center gap-3 rounded-2xl border hairline bg-card px-4 py-3">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                type="text"
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="Buscar roupas, marcas..."
-                className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              />
-              <button
-                type="button"
-                className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm text-foreground"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Filtrar
-              </button>
-            </div>
-
-            <div className="mt-8 flex items-baseline justify-between">
-              <h1 className="text-display text-2xl text-ink">Todos os produtos</h1>
-              <span className="text-mono text-muted-foreground">
-                {filteredProducts.length} {filteredProducts.length === 1 ? "peça" : "peças"}
-              </span>
-            </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-4">
-              {filteredProducts.map((product) => (
-                <div
-                  key={product.id}
-                  className="overflow-hidden rounded-2xl border hairline bg-card"
-                >
-                  <div className="relative aspect-4/5 w-full bg-secondary">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="h-full w-full object-cover"
+                <form className="mt-8 flex flex-col gap-4" onSubmit={handleAuthSubmit}>
+                  <div>
+                    <Label className="mb-2 block">Usuário</Label>
+                    <Input
+                      value={authUsername}
+                      onChange={(e) => setAuthUsername(e.target.value)}
+                      autoComplete="username"
+                      required
                     />
-                    {product.badge && (
-                      <span className="absolute left-2 top-2 rounded-full bg-ink px-2 py-0.5 text-xs font-medium text-background">
-                        {product.badge}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => toggleFavorite(product.id)}
-                      aria-label="Favoritar"
-                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-card/90"
-                    >
-                      <Heart
-                        className={`h-4 w-4 ${
-                          favorites.has(product.id)
-                            ? "fill-primary text-primary"
-                            : "text-foreground"
-                        }`}
-                      />
-                    </button>
                   </div>
-                  <div className="p-3">
-                    <div className="text-xs text-muted-foreground">{product.brand}</div>
-                    <div className="mt-0.5 text-sm font-medium text-ink">{product.name}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      ★ {product.rating.toFixed(1)} ({product.ratingCount})
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-display text-lg text-primary">
-                        R$ {product.price.toFixed(2).replace(".", ",")}
-                      </span>
+                  <div>
+                    <Label className="mb-2 block">Senha</Label>
+                    <Input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                      required
+                    />
+                  </div>
+
+                  {authError && <p className="text-sm text-destructive">{authError}</p>}
+
+                  <Button type="submit" className="mt-2" disabled={authLoading}>
+                    {authLoading ? "Aguarde..." : authMode === "login" ? "Entrar" : "Criar conta"}
+                  </Button>
+                </form>
+
+                <p className="mt-6 text-center text-sm text-muted-foreground">
+                  {authMode === "login" ? (
+                    <>
+                      Não tem conta?{" "}
                       <button
                         type="button"
-                        onClick={() => setBagCount((n) => n + 1)}
-                        aria-label={`Adicionar ${product.name} à sacola`}
-                        className="flex items-center gap-1 rounded-full bg-ink px-2.5 py-1.5 text-xs font-medium text-background"
+                        className="text-primary hover:underline"
+                        onClick={() => {
+                          setAuthMode("register");
+                          setAuthError("");
+                        }}
                       >
-                        <ShoppingBag className="h-3 w-3" />+
+                        Criar conta
                       </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {filteredProducts.length === 0 && (
-              <p className="mt-10 text-center text-sm text-muted-foreground">
-                Nenhuma peça encontrada.
-              </p>
+                    </>
+                  ) : (
+                    <>
+                      Já tem conta?{" "}
+                      <button
+                        type="button"
+                        className="text-primary hover:underline"
+                        onClick={() => {
+                          setAuthMode("login");
+                          setAuthError("");
+                        }}
+                      >
+                        Entrar
+                      </button>
+                    </>
+                  )}
+                </p>
+              </div>
             )}
-          </div>
-        )}
 
-        {step === "looks" && (
-          <div className="flex flex-col items-center py-24 text-center">
-            <Sparkles className="h-8 w-8 text-muted-foreground" />
-            <h1 className="text-display mt-4 text-2xl text-ink">Looks em breve</h1>
-            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-              Em breve você vai poder combinar peças com o seu avatar aqui.
-            </p>
-          </div>
-        )}
+            {step === "intro" && (
+              <div>
+                <h1 className="text-display text-4xl text-ink">Suas informações</h1>
+                <p className="mt-3 text-muted-foreground">
+                  Esses dados ajudam a calibrar a escala das suas medidas.
+                </p>
 
-        {step === "error" && (
-          <div className="flex flex-col items-center py-24 text-center">
-            <h1 className="text-display text-2xl text-ink">Não foi possível calcular</h1>
-            <p className="mt-2 max-w-sm text-sm text-muted-foreground">{errorMessage}</p>
-            <Button
-              className="mt-8"
-              onClick={() => {
-                setStep("front_instructions");
-                setFrontImage("");
-                setSideImage("");
-              }}
-            >
-              Tentar de novo
-            </Button>
-          </div>
+                <div className="mt-8 flex flex-col gap-6">
+                  <div>
+                    <Label htmlFor="name" className="mb-3 block">
+                      Nome
+                    </Label>
+                    <Input
+                      id="name"
+                      placeholder="Seu nome"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="mb-3 block">Gênero</Label>
+                    <GenderSelect value={gender} onChange={setGender} />
+                  </div>
+
+                  <NumberStepper
+                    label="Altura"
+                    unit="cm"
+                    value={height}
+                    onChange={setHeight}
+                    min={120}
+                    max={220}
+                  />
+                  <NumberStepper
+                    label="Peso"
+                    unit="kg"
+                    value={weight}
+                    onChange={setWeight}
+                    min={30}
+                    max={200}
+                  />
+
+                  <Button
+                    disabled={!canContinueFromIntro}
+                    onClick={() => setStep("front_instructions")}
+                    className="mt-2"
+                  >
+                    Continuar
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === "front_instructions" && (
+              <div className="flex flex-col items-center text-center">
+                <h1 className="text-display text-4xl text-ink">Foto de frente</h1>
+                <p className="mt-3 text-muted-foreground">
+                  Vamos te guiar pra tirar uma boa foto de frente. Confira as dicas antes de
+                  começar.
+                </p>
+
+                <div className="mt-8 overflow-hidden rounded-2xl bg-secondary">
+                  <img
+                    src={poseFrontAvatar}
+                    alt="Referência da pose de frente"
+                    className="h-64 w-auto"
+                  />
+                </div>
+
+                <ul className="mt-8 flex w-full flex-col gap-3 text-left">
+                  {FRONT_PHOTO_TIPS.map((tip) => (
+                    <li key={tip} className="flex gap-3 text-sm text-foreground">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-medium text-primary-foreground">
+                        ✓
+                      </span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Button onClick={() => setStep("front_capture")} className="mt-8 w-full">
+                  Continuar
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setStep("intro")}
+                  className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
+                >
+                  Voltar
+                </button>
+              </div>
+            )}
+
+            {step === "front_capture" && (
+              <div className="flex flex-col items-center text-center">
+                <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde,
+                  a foto é tirada sozinha.
+                </p>
+
+                <div className="mt-6 w-full">
+                  <GuidedCamera
+                    mode="front"
+                    onCapture={(base64) => {
+                      setFrontImage(base64);
+                      setStep("side_instructions");
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStep("front_instructions")}
+                  className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
+                >
+                  Ver instruções de novo
+                </button>
+              </div>
+            )}
+
+            {step === "side_instructions" && (
+              <div className="flex flex-col items-center text-center">
+                <h1 className="text-display text-4xl text-ink">Foto de perfil</h1>
+                <p className="mt-3 text-muted-foreground">
+                  Foto de frente ok! Agora vamos tirar sua foto de perfil (de lado).
+                </p>
+
+                <div className="mt-8 overflow-hidden rounded-2xl bg-secondary">
+                  <img
+                    src={poseSideAvatar}
+                    alt="Referência da pose de perfil"
+                    className="h-64 w-auto"
+                  />
+                </div>
+
+                <ul className="mt-8 flex w-full flex-col gap-3 text-left">
+                  {SIDE_PHOTO_TIPS.map((tip) => (
+                    <li key={tip} className="flex gap-3 text-sm text-foreground">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[11px] font-medium text-primary-foreground">
+                        ✓
+                      </span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Button onClick={() => setStep("side_capture")} className="mt-8 w-full">
+                  Continuar
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setStep("front_capture")}
+                  className="mt-4 block w-full text-center text-sm text-muted-foreground hover:underline"
+                >
+                  Voltar
+                </button>
+              </div>
+            )}
+
+            {step === "side_capture" && (
+              <div className="flex flex-col items-center text-center">
+                <h1 className="text-display text-3xl text-ink">Encaixe-se no quadro</h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  A borda fica vermelha, amarela ou verde conforme sua posição. Quando ficar verde,
+                  a foto é tirada sozinha.
+                </p>
+
+                <div className="mt-6 w-full">
+                  <GuidedCamera
+                    mode="side"
+                    onCapture={(base64) => {
+                      setSideImage(base64);
+                      setStep("side_processing");
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStep("side_instructions")}
+                  className="mt-6 block w-full text-center text-sm text-muted-foreground hover:underline"
+                >
+                  Ver instruções de novo
+                </button>
+              </div>
+            )}
+
+            {step === "side_processing" && (
+              <div className="flex flex-col items-center py-24 text-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-secondary border-t-primary" />
+                <h1 className="text-display mt-6 text-2xl text-ink">Calculando suas medidas</h1>
+                <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+                  Pode demorar alguns minutos — vamos esperar o tempo que precisar.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("front_instructions");
+                    setFrontImage("");
+                    setSideImage("");
+                  }}
+                  className="mt-8 block text-center text-sm text-muted-foreground hover:underline"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+
+            {step === "result" && result && (
+              <div>
+                <div className="text-mono mb-2 text-primary">Pronto</div>
+                <h1 className="text-display text-4xl text-ink">Suas medidas</h1>
+
+                <div className="mt-8 divide-y hairline rounded-2xl border hairline">
+                  {Object.entries({ ...result.volumeParams, ...result.frontParams })
+                    .filter(([key, value]) => isDisplayableMeasurement(key, value))
+                    .map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between px-5 py-4">
+                        <span className="text-sm text-foreground">{MEASUREMENT_LABELS[key]}</span>
+                        <span className="text-display text-lg text-primary">{value} cm</span>
+                      </div>
+                    ))}
+                </div>
+
+                <Button className="mt-8" onClick={() => setStep("avatar")}>
+                  Próximo
+                </Button>
+              </div>
+            )}
+
+            {step === "avatar" && result && (
+              <div>
+                <div className="text-mono mb-2 text-primary">Seu avatar</div>
+                <h1 className="text-display text-4xl text-ink">Modelo 3D</h1>
+                <p className="mt-3 text-muted-foreground">
+                  Gerado a partir das suas duas fotos. Arraste para girar.
+                </p>
+
+                <div className="mt-8">
+                  {result.modelUrl ? (
+                    <AvatarViewer modelUrl={result.modelUrl} />
+                  ) : (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-8 flex justify-center">
+                  <Button onClick={() => setStep("shop")}>Próximo</Button>
+                </div>
+              </div>
+            )}
+
+            {step === "shop" && (
+              <div>
+                <div className="flex items-center gap-3 rounded-2xl border hairline bg-card px-4 py-3">
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    placeholder="Buscar roupas, marcas..."
+                    className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  <button
+                    type="button"
+                    className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm text-foreground"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Filtrar
+                  </button>
+                </div>
+
+                <div className="mt-8 flex items-baseline justify-between">
+                  <h1 className="text-display text-2xl text-ink">Todos os produtos</h1>
+                  <span className="text-mono text-muted-foreground">
+                    {filteredProducts.length} {filteredProducts.length === 1 ? "peça" : "peças"}
+                  </span>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-4">
+                  {filteredProducts.map((product) => (
+                    <div
+                      key={product.id}
+                      className="overflow-hidden rounded-2xl border hairline bg-card"
+                    >
+                      <div className="relative aspect-4/5 w-full bg-secondary">
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="h-full w-full object-cover"
+                        />
+                        {product.badge && (
+                          <span className="absolute left-2 top-2 rounded-full bg-ink px-2 py-0.5 text-xs font-medium text-background">
+                            {product.badge}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleFavorite(product.id)}
+                          aria-label="Favoritar"
+                          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-card/90"
+                        >
+                          <Heart
+                            className={`h-4 w-4 ${
+                              favorites.has(product.id)
+                                ? "fill-primary text-primary"
+                                : "text-foreground"
+                            }`}
+                          />
+                        </button>
+                      </div>
+                      <div className="p-3">
+                        <div className="text-xs text-muted-foreground">{product.brand}</div>
+                        <div className="mt-0.5 text-sm font-medium text-ink">{product.name}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          ★ {product.rating.toFixed(1)} ({product.ratingCount})
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-display text-lg text-primary">
+                            R$ {product.price.toFixed(2).replace(".", ",")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setBagCount((n) => n + 1)}
+                            aria-label={`Adicionar ${product.name} à sacola`}
+                            className="flex items-center gap-1 rounded-full bg-ink px-2.5 py-1.5 text-xs font-medium text-background"
+                          >
+                            <ShoppingBag className="h-3 w-3" />+
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {filteredProducts.length === 0 && (
+                  <p className="mt-10 text-center text-sm text-muted-foreground">
+                    Nenhuma peça encontrada.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {step === "looks" && (
+              <div className="flex flex-col items-center py-24 text-center">
+                <Sparkles className="h-8 w-8 text-muted-foreground" />
+                <h1 className="text-display mt-4 text-2xl text-ink">Looks em breve</h1>
+                <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+                  Em breve você vai poder combinar peças com o seu avatar aqui.
+                </p>
+              </div>
+            )}
+
+            {step === "error" && (
+              <div className="flex flex-col items-center py-24 text-center">
+                <h1 className="text-display text-2xl text-ink">Não foi possível calcular</h1>
+                <p className="mt-2 max-w-sm text-sm text-muted-foreground">{errorMessage}</p>
+                <Button
+                  className="mt-8"
+                  onClick={() => {
+                    setStep("front_instructions");
+                    setFrontImage("");
+                    setSideImage("");
+                  }}
+                >
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </main>
 

@@ -1,4 +1,4 @@
-import { createStart, createMiddleware } from "@tanstack/react-start";
+import { createCsrfMiddleware, createStart, createMiddleware } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
 
@@ -26,6 +26,16 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   }
 });
 
+// Now that login/register/logout rely on a session cookie, server functions
+// need real CSRF protection — without it, another site could make a logged-in
+// visitor's browser fire an authenticated request (e.g. log them out, or
+// worse if a more sensitive action gets added later) just by them loading a
+// malicious page. This was flagged automatically in dev; not something to
+// leave unaddressed once real accounts are involved.
+const csrfMiddleware = createCsrfMiddleware({
+  filter: (ctx) => ctx.handlerType === "serverFn",
+});
+
 export const startInstance = createStart(() => ({
-  requestMiddleware: [errorMiddleware],
+  requestMiddleware: [csrfMiddleware, errorMiddleware],
 }));
