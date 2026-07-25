@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { Heart, Search, Shirt, ShoppingBag, SlidersHorizontal, Sparkles } from "lucide-react";
 
 import { AvatarViewer } from "@/components/AvatarViewer";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,54 @@ import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/t
 import logoVClothes from "@/assets/logo-vclothes.png";
 import poseFrontAvatar from "@/assets/pose-front-avatar.jpg";
 import poseSideAvatar from "@/assets/pose-side-avatar.jpg";
+import garmentJacket from "@/assets/garment-jacket.png";
+import garmentPants from "@/assets/garment-pants.png";
+import garmentHoodie from "@/assets/garment-hoodie.png";
+
+// Mock catalog for the FECEAP demo — there's no real product backend yet,
+// just the garment photos already used on the landing page.
+type Product = {
+  id: string;
+  brand: string;
+  name: string;
+  price: number;
+  rating: number;
+  ratingCount: number;
+  image: string;
+  badge?: string;
+};
+
+const PRODUCTS: Product[] = [
+  {
+    id: "jaqueta-structured",
+    brand: "Studio Norte",
+    name: "Jaqueta Structured",
+    price: 289,
+    rating: 4.8,
+    ratingCount: 120,
+    image: garmentJacket,
+    badge: "-20%",
+  },
+  {
+    id: "calca-alfaiataria",
+    brand: "Studio Norte",
+    name: "Calça Alfaiataria",
+    price: 219,
+    rating: 4.6,
+    ratingCount: 64,
+    image: garmentPants,
+  },
+  {
+    id: "moletom-oversized",
+    brand: "Studio Norte",
+    name: "Moletom Oversized",
+    price: 179,
+    rating: 4.9,
+    ratingCount: 203,
+    image: garmentHoodie,
+    badge: "Novo",
+  },
+];
 
 export const Route = createFileRoute("/")({
   component: Provador,
@@ -26,7 +75,8 @@ type Step =
   | "side_processing"
   | "result"
   | "avatar"
-  | "done"
+  | "shop"
+  | "looks"
   | "error";
 
 const STEP_NUMBER: Record<Step, number> = {
@@ -38,7 +88,8 @@ const STEP_NUMBER: Record<Step, number> = {
   side_processing: 5,
   result: 5,
   avatar: 6,
-  done: 7,
+  shop: 7,
+  looks: 7,
   error: 5,
 };
 
@@ -158,6 +209,22 @@ function Provador() {
   const [sideImage, setSideImage] = useState("");
   const [result, setResult] = useState<ScanStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [bagCount, setBagCount] = useState(0);
+  const [productQuery, setProductQuery] = useState("");
+
+  function toggleFavorite(id: string) {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const filteredProducts = PRODUCTS.filter((product) =>
+    `${product.brand} ${product.name}`.toLowerCase().includes(productQuery.toLowerCase()),
+  );
 
   useEffect(() => {
     if (step !== "side_processing") return;
@@ -220,23 +287,48 @@ function Provador() {
     Number(weight) >= 30 &&
     Number(weight) <= 200;
 
+  const isShopSection = step === "shop" || step === "looks";
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="border-b hairline">
-        <div className="mx-auto flex h-18 max-w-3xl items-center px-6">
-          <img
-            src={logoVClothes}
-            alt="V-Clothes"
-            className="h-8 w-8 object-contain"
-            width={1024}
-            height={1024}
-          />
-          <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
-          <span className="text-mono ml-auto text-muted-foreground">Passo {STEP_NUMBER[step]}</span>
-        </div>
-      </header>
+      {isShopSection ? (
+        <header className="border-b hairline">
+          <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-5">
+            <div>
+              <div className="text-mono text-primary">V-Clothes</div>
+              <h1 className="text-display text-3xl text-ink">Descubra seu estilo</h1>
+            </div>
+            <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-background">
+              <ShoppingBag className="h-5 w-5" />
+              {bagCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+                  {bagCount}
+                </span>
+              )}
+            </div>
+          </div>
+        </header>
+      ) : (
+        <header className="border-b hairline">
+          <div className="mx-auto flex h-18 max-w-3xl items-center px-6">
+            <img
+              src={logoVClothes}
+              alt="V-Clothes"
+              className="h-8 w-8 object-contain"
+              width={1024}
+              height={1024}
+            />
+            <span className="text-display ml-3 text-xl tracking-tight">V-Clothes</span>
+            <span className="text-mono ml-auto text-muted-foreground">
+              Passo {STEP_NUMBER[step]}
+            </span>
+          </div>
+        </header>
+      )}
 
-      <main className="mx-auto w-full max-w-md flex-1 px-6 py-12">
+      <main
+        className={`mx-auto w-full flex-1 px-6 ${isShopSection ? "max-w-3xl py-8 pb-28" : "max-w-md py-12"}`}
+      >
         {step === "intro" && (
           <div>
             <h1 className="text-display text-4xl text-ink">Suas informações</h1>
@@ -486,27 +578,109 @@ function Provador() {
             </div>
 
             <div className="mt-8 flex justify-center">
-              <Button onClick={() => setStep("done")}>Próximo</Button>
+              <Button onClick={() => setStep("shop")}>Próximo</Button>
             </div>
           </div>
         )}
 
-        {step === "done" && (
+        {step === "shop" && (
+          <div>
+            <div className="flex items-center gap-3 rounded-2xl border hairline bg-card px-4 py-3">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="Buscar roupas, marcas..."
+                className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              <button
+                type="button"
+                className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-sm text-foreground"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filtrar
+              </button>
+            </div>
+
+            <div className="mt-8 flex items-baseline justify-between">
+              <h1 className="text-display text-2xl text-ink">Todos os produtos</h1>
+              <span className="text-mono text-muted-foreground">
+                {filteredProducts.length} {filteredProducts.length === 1 ? "peça" : "peças"}
+              </span>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-4">
+              {filteredProducts.map((product) => (
+                <div
+                  key={product.id}
+                  className="overflow-hidden rounded-2xl border hairline bg-card"
+                >
+                  <div className="relative aspect-4/5 w-full bg-secondary">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                    />
+                    {product.badge && (
+                      <span className="absolute left-2 top-2 rounded-full bg-ink px-2 py-0.5 text-xs font-medium text-background">
+                        {product.badge}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleFavorite(product.id)}
+                      aria-label="Favoritar"
+                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-card/90"
+                    >
+                      <Heart
+                        className={`h-4 w-4 ${
+                          favorites.has(product.id)
+                            ? "fill-primary text-primary"
+                            : "text-foreground"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <div className="p-3">
+                    <div className="text-xs text-muted-foreground">{product.brand}</div>
+                    <div className="mt-0.5 text-sm font-medium text-ink">{product.name}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      ★ {product.rating.toFixed(1)} ({product.ratingCount})
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-display text-lg text-primary">
+                        R$ {product.price.toFixed(2).replace(".", ",")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setBagCount((n) => n + 1)}
+                        aria-label={`Adicionar ${product.name} à sacola`}
+                        className="flex items-center gap-1 rounded-full bg-ink px-2.5 py-1.5 text-xs font-medium text-background"
+                      >
+                        <ShoppingBag className="h-3 w-3" />+
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {filteredProducts.length === 0 && (
+              <p className="mt-10 text-center text-sm text-muted-foreground">
+                Nenhuma peça encontrada.
+              </p>
+            )}
+          </div>
+        )}
+
+        {step === "looks" && (
           <div className="flex flex-col items-center py-24 text-center">
-            <div className="text-mono mb-2 text-primary">Tudo pronto</div>
-            <h1 className="text-display text-4xl text-ink">Obrigado!</h1>
-            <Button
-              variant="outline"
-              className="mt-8"
-              onClick={() => {
-                setStep("intro");
-                setResult(null);
-                setFrontImage("");
-                setSideImage("");
-              }}
-            >
-              Fazer novo escaneamento
-            </Button>
+            <Sparkles className="h-8 w-8 text-muted-foreground" />
+            <h1 className="text-display mt-4 text-2xl text-ink">Looks em breve</h1>
+            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+              Em breve você vai poder combinar peças com o seu avatar aqui.
+            </p>
           </div>
         )}
 
@@ -527,6 +701,33 @@ function Provador() {
           </div>
         )}
       </main>
+
+      {isShopSection && (
+        <nav className="fixed inset-x-0 bottom-0 border-t hairline bg-card">
+          <div className="mx-auto grid max-w-3xl grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setStep("shop")}
+              className={`flex flex-col items-center gap-1 py-3 text-xs ${
+                step === "shop" ? "text-ink" : "text-muted-foreground"
+              }`}
+            >
+              <Shirt className="h-5 w-5" />
+              Roupas
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep("looks")}
+              className={`flex flex-col items-center gap-1 py-3 text-xs ${
+                step === "looks" ? "text-ink" : "text-muted-foreground"
+              }`}
+            >
+              <Sparkles className="h-5 w-5" />
+              Looks
+            </button>
+          </div>
+        </nav>
+      )}
     </div>
   );
 }
