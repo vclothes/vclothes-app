@@ -1,4 +1,18 @@
-// The first real product in the shop, replacing the earlier mock catalog.
+import tshirtBlack from "@/assets/tshirt-black.jpg";
+
+// The catalog shown on the shop tab. Just one real product so far — a
+// grid of one card still reads as "a catalog" (vs. the single full-page
+// product view this replaced), and new products slot in the same way.
+export type Product = {
+  id: string;
+  name: string;
+  image: string;
+};
+
+export const PRODUCTS: Product[] = [
+  { id: "camiseta-preta", name: "Camiseta Preta Básica", image: tshirtBlack },
+];
+
 // Size chart values are cm, as supplied by the team (matches the units
 // 3DLOOK's own volume_params/front_params already use — see measurements.ts).
 export type ShirtSize = "P" | "M" | "G" | "GG";

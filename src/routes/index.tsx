@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import {
+  PRODUCTS,
   recommendShirtSize,
   SHIRT_SIZE_CHART,
   SHIRT_SIZES,
@@ -32,7 +33,6 @@ import logoVClothes from "@/assets/logo-vclothes.png";
 const LANDING_PAGE_URL = "https://v-clothes.henriquecgfarias.workers.dev/";
 import poseFrontAvatar from "@/assets/pose-front-avatar.jpg";
 import poseSideAvatar from "@/assets/pose-side-avatar.jpg";
-import tshirtBlack from "@/assets/tshirt-black.jpg";
 
 export const Route = createFileRoute("/")({
   component: Provador,
@@ -50,6 +50,7 @@ type Step =
   | "avatar"
   | "customize"
   | "shop"
+  | "product"
   | "looks"
   | "error";
 
@@ -65,6 +66,7 @@ const STEP_NUMBER: Record<Step, number> = {
   avatar: 6,
   customize: 6,
   shop: 7,
+  product: 7,
   looks: 7,
   error: 5,
 };
@@ -193,6 +195,7 @@ function Provador() {
   const [errorMessage, setErrorMessage] = useState("");
   const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
   const [selectedShirtSize, setSelectedShirtSize] = useState<ShirtSize | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   function handlePickSkinTone(tone: string | null) {
     setSkinTone(tone ?? undefined);
@@ -210,6 +213,7 @@ function Provador() {
   });
   // Defaults to the recommendation until the person taps a size themselves.
   const activeShirtSize = selectedShirtSize ?? recommendedShirtSize;
+  const selectedProduct = PRODUCTS.find((p) => p.id === selectedProductId) ?? null;
 
   // Runs once on load — if there's already a valid session cookie, skip the
   // login screen entirely and go straight to wherever this person left off,
@@ -338,7 +342,11 @@ function Provador() {
     Number(weight) <= 200;
 
   const isShopSection =
-    step === "shop" || step === "avatar" || step === "customize" || step === "looks";
+    step === "shop" ||
+    step === "product" ||
+    step === "avatar" ||
+    step === "customize" ||
+    step === "looks";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -784,85 +792,131 @@ function Provador() {
             )}
 
             {step === "shop" && (
-              <div className="overflow-hidden rounded-2xl border hairline bg-card">
-                <div className="aspect-4/5 w-full bg-secondary">
-                  <img
-                    src={tshirtBlack}
-                    alt="Camiseta preta básica"
-                    className="h-full w-full object-cover"
-                  />
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <h1 className="text-display text-2xl text-ink">Todos os produtos</h1>
+                  <span className="text-mono text-muted-foreground">
+                    {PRODUCTS.length} {PRODUCTS.length === 1 ? "peça" : "peças"}
+                  </span>
                 </div>
-                <div className="p-5">
-                  <div className="text-xs text-muted-foreground">V-Clothes</div>
-                  <h1 className="text-display mt-1 text-2xl text-ink">Camiseta Preta Básica</h1>
 
-                  {recommendedShirtSize && (
-                    <p className="mt-3 text-sm text-foreground">
-                      Tamanho recomendado pra você:{" "}
-                      <span className="font-semibold text-primary">{recommendedShirtSize}</span>
-                    </p>
-                  )}
+                <div className="mt-5 grid grid-cols-2 gap-4">
+                  {PRODUCTS.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProductId(product.id);
+                        setStep("product");
+                      }}
+                      className="overflow-hidden rounded-2xl border hairline bg-card text-left"
+                    >
+                      <div className="aspect-4/5 w-full bg-secondary">
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-medium text-ink">{product.name}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                  <div className="mt-5">
-                    <div className="text-sm font-semibold text-ink">Tamanho</div>
-                    <div className="mt-2 flex gap-2">
-                      {SHIRT_SIZES.map((size) => (
-                        <button
-                          key={size}
-                          type="button"
-                          onClick={() => setSelectedShirtSize(size)}
-                          aria-label={`Tamanho ${size}`}
-                          className={`flex h-11 w-14 items-center justify-center rounded-xl border-2 text-sm font-medium ${
-                            activeShirtSize === size
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border hairline text-foreground"
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      ))}
-                    </div>
+            {step === "product" && selectedProduct && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setStep("shop")}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:underline"
+                >
+                  ← Voltar
+                </button>
+
+                <div className="mt-5 overflow-hidden rounded-2xl border hairline bg-card">
+                  <div className="aspect-4/5 w-full bg-secondary">
+                    <img
+                      src={selectedProduct.image}
+                      alt={selectedProduct.name}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
+                  <div className="p-5">
+                    <div className="text-xs text-muted-foreground">V-Clothes</div>
+                    <h1 className="text-display mt-1 text-2xl text-ink">{selectedProduct.name}</h1>
 
-                  <div className="mt-6">
-                    <div className="text-sm font-semibold text-ink">Guia de medidas</div>
-                    <div className="mt-3 overflow-x-auto">
-                      <table className="w-full min-w-[420px] text-sm">
-                        <thead>
-                          <tr className="border-b hairline text-left text-muted-foreground">
-                            <th className="py-2 pr-3 font-medium">Medida</th>
-                            {SHIRT_SIZES.map((size) => (
-                              <th
-                                key={size}
-                                className={`px-2 py-2 text-center font-medium ${
-                                  activeShirtSize === size ? "text-primary" : ""
-                                }`}
-                              >
-                                {size}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {SIZE_CHART_ROWS.map(({ label, key }) => (
-                            <tr key={key} className="border-b hairline last:border-0">
-                              <td className="py-2 pr-3 text-foreground">{label}</td>
+                    {recommendedShirtSize && (
+                      <p className="mt-3 text-sm text-foreground">
+                        Tamanho recomendado pra você:{" "}
+                        <span className="font-semibold text-primary">{recommendedShirtSize}</span>
+                      </p>
+                    )}
+
+                    <div className="mt-5">
+                      <div className="text-sm font-semibold text-ink">Tamanho</div>
+                      <div className="mt-2 flex gap-2">
+                        {SHIRT_SIZES.map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => setSelectedShirtSize(size)}
+                            aria-label={`Tamanho ${size}`}
+                            className={`flex h-11 w-14 items-center justify-center rounded-xl border-2 text-sm font-medium ${
+                              activeShirtSize === size
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border hairline text-foreground"
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <div className="text-sm font-semibold text-ink">Guia de medidas</div>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full min-w-[420px] text-sm">
+                          <thead>
+                            <tr className="border-b hairline text-left text-muted-foreground">
+                              <th className="py-2 pr-3 font-medium">Medida</th>
                               {SHIRT_SIZES.map((size) => (
-                                <td
+                                <th
                                   key={size}
-                                  className={`px-2 py-2 text-center ${
-                                    activeShirtSize === size
-                                      ? "font-semibold text-primary"
-                                      : "text-muted-foreground"
+                                  className={`px-2 py-2 text-center font-medium ${
+                                    activeShirtSize === size ? "text-primary" : ""
                                   }`}
                                 >
-                                  {SHIRT_SIZE_CHART[size][key]} cm
-                                </td>
+                                  {size}
+                                </th>
                               ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {SIZE_CHART_ROWS.map(({ label, key }) => (
+                              <tr key={key} className="border-b hairline last:border-0">
+                                <td className="py-2 pr-3 text-foreground">{label}</td>
+                                {SHIRT_SIZES.map((size) => (
+                                  <td
+                                    key={size}
+                                    className={`px-2 py-2 text-center ${
+                                      activeShirtSize === size
+                                        ? "font-semibold text-primary"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    {SHIRT_SIZE_CHART[size][key]} cm
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -906,7 +960,7 @@ function Provador() {
               type="button"
               onClick={() => setStep("shop")}
               className={`flex flex-col items-center gap-1 py-3 text-xs ${
-                step === "shop" ? "text-ink" : "text-muted-foreground"
+                step === "shop" || step === "product" ? "text-ink" : "text-muted-foreground"
               }`}
             >
               <Shirt className="h-5 w-5" />
