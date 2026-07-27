@@ -80,10 +80,7 @@ export const SIZE_CHART_ROWS: { label: string; key: keyof SizeSpec }[] = [
   { label: "Comprimento da manga", key: "sleeveCm" },
 ];
 
-// volume_params/front_params keys that correspond to each size-chart column
-// this garment can actually be matched against. "lengthCm" has no
-// body-measurement equivalent (it's a garment spec, not something 3DLOOK
-// measures), so it's left out of matching on purpose.
+// volume_params/front_params keys that correspond to each size-chart column.
 //
 // The obvious key names ("waist", "high_hips", "neck") are NOT the actual
 // circumferences — confirmed against a real scan's raw JSON, they come back
@@ -96,13 +93,34 @@ export const SIZE_CHART_ROWS: { label: string; key: keyof SizeSpec }[] = [
 // signal with a near-constant penalty that happens to favor the smallest
 // size. Do not "fix" this back to the obvious names without re-checking
 // against a real scan's raw output first.
-const MATCH_KEYS: { specKey: keyof SizeSpec; scanKeys: string[] }[] = [
-  { specKey: "chestCm", scanKeys: ["chest"] },
-  { specKey: "waistCm", scanKeys: ["alternative_waist_girth", "pant_waist", "waist_gray"] },
-  { specKey: "hipCm", scanKeys: ["low_hips"] },
-  { specKey: "shoulderCm", scanKeys: ["shoulders"] },
-  { specKey: "collarCm", scanKeys: ["neck_girth", "neck_girth_relaxed"] },
+const MEASUREMENT_SCAN_KEYS: Partial<Record<keyof SizeSpec, string[]>> = {
+  chestCm: ["chest"],
+  waistCm: ["alternative_waist_girth", "pant_waist", "waist_gray"],
+  hipCm: ["low_hips"],
+  shoulderCm: ["shoulders"],
+  collarCm: ["neck_girth", "neck_girth_relaxed"],
+  sleeveCm: ["sleeve_length"],
+  // lengthCm intentionally omitted — it's a garment spec (total shirt
+  // length), not something 3DLOOK measures on a body.
+};
+
+// Used for both the size recommendation and the "your measurement" column
+// on the size guide — chest/waist/hip/shoulders/collar only, matching
+// MEASUREMENT_SCAN_KEYS minus sleeveCm (sleeve length isn't used to pick a
+// size, just shown for reference).
+const RECOMMENDATION_KEYS: (keyof SizeSpec)[] = [
+  "chestCm",
+  "waistCm",
+  "hipCm",
+  "shoulderCm",
+  "collarCm",
 ];
+
+function resolveScanValue(scan: Record<string, number | null>, specKey: keyof SizeSpec) {
+  const scanKeys = MEASUREMENT_SCAN_KEYS[specKey];
+  if (!scanKeys) return null;
+  return scanKeys.map((k) => scan[k]).find((v): v is number => typeof v === "number") ?? null;
+}
 
 // Picks whichever size's chart values are closest overall to this person's
 // own scan measurements (least total absolute difference across whichever
@@ -116,9 +134,7 @@ export function recommendShirtSize(
 ): ShirtSize | null {
   if (!scan) return null;
 
-  const usableKeys = MATCH_KEYS.filter(({ scanKeys }) =>
-    scanKeys.some((k) => typeof scan[k] === "number"),
-  );
+  const usableKeys = RECOMMENDATION_KEYS.filter((k) => resolveScanValue(scan, k) != null);
   if (usableKeys.length === 0) return null;
 
   let best: ShirtSize | null = null;
@@ -127,10 +143,8 @@ export function recommendShirtSize(
   for (const size of SHIRT_SIZES) {
     const spec = SHIRT_SIZE_CHART[size];
     let score = 0;
-    for (const { specKey, scanKeys } of usableKeys) {
-      const scanValue = scanKeys
-        .map((k) => scan[k])
-        .find((v): v is number => typeof v === "number");
+    for (const specKey of usableKeys) {
+      const scanValue = resolveScanValue(scan, specKey);
       if (scanValue == null) continue;
       score += Math.abs(scanValue - spec[specKey]);
     }
@@ -141,4 +155,20 @@ export function recommendShirtSize(
   }
 
   return best;
+}
+
+// The person's own measurement for each size-guide row that has a body
+// equivalent (everything except lengthCm), so the size guide can show
+// "Você" alongside P/M/G/GG instead of leaving the person to eyeball which
+// column is closest.
+export function getUserMeasurements(
+  scan: Record<string, number | null> | undefined,
+): Partial<Record<keyof SizeSpec, number>> {
+  if (!scan) return {};
+  const result: Partial<Record<keyof SizeSpec, number>> = {};
+  for (const specKey of Object.keys(MEASUREMENT_SCAN_KEYS) as (keyof SizeSpec)[]) {
+    const value = resolveScanValue(scan, specKey);
+    if (value != null) result[specKey] = value;
+  }
+  return result;
 }

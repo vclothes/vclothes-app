@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import {
+  getUserMeasurements,
   PRODUCTS,
   recommendShirtSize,
   SHIRT_SIZE_CHART,
@@ -207,10 +208,9 @@ function Provador() {
   // Merges both measurement sources the same way the "result" step already
   // does when listing them out — chest/waist tend to live in volume_params,
   // neck/shoulders in front_params, so a size recommendation needs both.
-  const recommendedShirtSize = recommendShirtSize({
-    ...result?.volumeParams,
-    ...result?.frontParams,
-  });
+  const mergedMeasurements = { ...result?.volumeParams, ...result?.frontParams };
+  const recommendedShirtSize = recommendShirtSize(mergedMeasurements);
+  const userMeasurements = getUserMeasurements(mergedMeasurements);
   // Defaults to the recommendation until the person taps a size themselves.
   const activeShirtSize = selectedShirtSize ?? recommendedShirtSize;
   const selectedProduct = PRODUCTS.find((p) => p.id === selectedProductId) ?? null;
@@ -880,10 +880,13 @@ function Provador() {
                     <div className="mt-6">
                       <div className="text-sm font-semibold text-ink">Guia de medidas</div>
                       <div className="mt-3 overflow-x-auto">
-                        <table className="w-full min-w-[420px] text-sm">
+                        <table className="w-full min-w-[500px] text-sm">
                           <thead>
                             <tr className="border-b hairline text-left text-muted-foreground">
                               <th className="py-2 pr-3 font-medium">Medida</th>
+                              <th className="bg-secondary px-2 py-2 text-center font-medium text-ink">
+                                Você
+                              </th>
                               {SHIRT_SIZES.map((size) => (
                                 <th
                                   key={size}
@@ -900,6 +903,11 @@ function Provador() {
                             {SIZE_CHART_ROWS.map(({ label, key }) => (
                               <tr key={key} className="border-b hairline last:border-0">
                                 <td className="py-2 pr-3 text-foreground">{label}</td>
+                                <td className="bg-secondary px-2 py-2 text-center font-semibold text-ink">
+                                  {userMeasurements[key] != null
+                                    ? `${userMeasurements[key].toFixed(1)} cm`
+                                    : "—"}
+                                </td>
                                 {SHIRT_SIZES.map((size) => (
                                   <td
                                     key={size}
