@@ -21,11 +21,13 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  saveAvatarHairStyle,
   saveAvatarSkinTone,
   saveUserScanResult,
   SKIN_TONE_PRESETS,
   validatePassword,
 } from "@/lib/auth";
+import { HAIR_STYLES } from "@/lib/hairStyles";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
@@ -245,11 +247,19 @@ function Provador() {
   const [bagCount, setBagCount] = useState(0);
   const [productQuery, setProductQuery] = useState("");
   const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
+  const [hairStyle, setHairStyle] = useState<string | undefined>(undefined);
 
   function handlePickSkinTone(tone: string | null) {
     setSkinTone(tone ?? undefined);
     saveAvatarSkinTone({ data: { skinTone: tone } }).catch((err) =>
       console.error("[Provador] failed to save skin tone", err),
+    );
+  }
+
+  function handlePickHairStyle(style: string | null) {
+    setHairStyle(style ?? undefined);
+    saveAvatarHairStyle({ data: { hairStyle: style } }).catch((err) =>
+      console.error("[Provador] failed to save hair style", err),
     );
   }
 
@@ -279,6 +289,7 @@ function Provador() {
         if (user) {
           if (user.scanResult) setResult(user.scanResult);
           if (user.skinTone) setSkinTone(user.skinTone);
+          if (user.hairStyle) setHairStyle(user.hairStyle);
           setStep(user.hasScan ? "shop" : "intro");
         }
       } finally {
@@ -308,6 +319,7 @@ function Provador() {
       const user = await submit({ data: { username: authUsername, password: authPassword } });
       if (user.scanResult) setResult(user.scanResult);
       if (user.skinTone) setSkinTone(user.skinTone);
+      if (user.hairStyle) setHairStyle(user.hairStyle);
       setStep(user.hasScan ? "shop" : "intro");
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
@@ -780,7 +792,11 @@ function Provador() {
 
                 <div className="mt-8">
                   {result?.modelUrl ? (
-                    <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
+                    <AvatarViewer
+                      modelUrl={result.modelUrl}
+                      color={skinTone}
+                      hairStyle={hairStyle}
+                    />
                   ) : (
                     <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
                       A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
@@ -809,7 +825,11 @@ function Provador() {
 
                 <div className="mt-6">
                   {result?.modelUrl ? (
-                    <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
+                    <AvatarViewer
+                      modelUrl={result.modelUrl}
+                      color={skinTone}
+                      hairStyle={hairStyle}
+                    />
                   ) : (
                     <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
                       A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
@@ -862,9 +882,53 @@ function Provador() {
 
                 <div className="text-mono mb-2 mt-5 text-primary">Personalização</div>
                 <h1 className="text-display text-4xl text-ink">Cabelo</h1>
-                <p className="mt-3 text-muted-foreground">
-                  Em breve você vai poder escolher entre cabelo curto, médio e longo.
-                </p>
+                <p className="mt-3 text-muted-foreground">Escolha um estilo. Arraste para girar.</p>
+
+                <div className="mt-6">
+                  {result?.modelUrl ? (
+                    <AvatarViewer
+                      modelUrl={result.modelUrl}
+                      color={skinTone}
+                      hairStyle={hairStyle}
+                      focus="head"
+                    />
+                  ) : (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-7 grid grid-cols-4 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handlePickHairStyle(null)}
+                    className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 bg-secondary text-xs text-muted-foreground ${
+                      hairStyle === undefined ? "border-primary" : "border-transparent"
+                    }`}
+                  >
+                    Nenhum
+                  </button>
+                  {HAIR_STYLES.map((style) => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => handlePickHairStyle(style.id)}
+                      aria-label={`Cabelo ${style.id}`}
+                      className={`aspect-square overflow-hidden rounded-xl border-2 ${
+                        hairStyle === style.id ? "border-primary" : "border-transparent"
+                      }`}
+                    >
+                      <img
+                        src={style.thumb}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        width={360}
+                        height={360}
+                      />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

@@ -13,10 +13,11 @@ const THREE_VERSION = "0.160.0";
 const THREE_BASE = `https://esm.sh/three@${THREE_VERSION}`;
 
 export async function loadThree() {
-  const [THREE, { OBJLoader }, { OrbitControls }] = await Promise.all([
+  const [THREE, { OBJLoader }, { OrbitControls }, { GLTFLoader }] = await Promise.all([
     import(/* @vite-ignore */ THREE_BASE),
     import(/* @vite-ignore */ `${THREE_BASE}/examples/jsm/loaders/OBJLoader.js`),
     import(/* @vite-ignore */ `${THREE_BASE}/examples/jsm/controls/OrbitControls.js`),
+    import(/* @vite-ignore */ `${THREE_BASE}/examples/jsm/loaders/GLTFLoader.js`),
   ]);
-  return { THREE, OBJLoader, OrbitControls };
+  return { THREE, OBJLoader, OrbitControls, GLTFLoader };
 }

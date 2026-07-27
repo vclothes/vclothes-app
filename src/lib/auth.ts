@@ -34,6 +34,7 @@ type StoredUser = {
   createdAt: string;
   scanResult?: ScanStatus;
   skinTone?: string;
+  hairStyle?: string;
 };
 
 // Shared with the swatch picker on the avatar screen — kept as a fixed set
@@ -46,6 +47,27 @@ export const SKIN_TONE_PRESETS = [
   "#a56b3e",
   "#74462c",
   "#4a2c1a",
+] as const;
+
+// The valid ids from lib/hairStyles.ts's HAIR_STYLES, duplicated here (as
+// plain strings, not importing that file) so this server-only module
+// doesn't pull in its thumbnail image imports just to validate a string.
+const HAIR_STYLE_IDS = [
+  "hair9cap",
+  "hair4",
+  "hair01",
+  "hair02",
+  "hair03",
+  "hair05",
+  "hair06",
+  "hair07",
+  "hair10cap",
+  "hair12cap",
+  "hair09",
+  "hair10",
+  "hair11",
+  "hair12",
+  "hair08",
 ] as const;
 
 function userKey(username: string) {
@@ -106,6 +128,7 @@ export type AuthResult = {
   hasScan: boolean;
   scanResult?: ScanStatus;
   skinTone?: string;
+  hairStyle?: string;
 };
 
 // Shared between the server check and the client-side hint on the signup
@@ -173,6 +196,7 @@ export const loginUser = createServerFn({ method: "POST" })
       hasScan: !!user.scanResult,
       scanResult: user.scanResult,
       skinTone: user.skinTone,
+      hairStyle: user.hairStyle,
     };
   });
 
@@ -196,6 +220,7 @@ export const getCurrentUser = createServerFn({ method: "POST" }).handler(
       hasScan: !!user.scanResult,
       scanResult: user.scanResult,
       skinTone: user.skinTone,
+      hairStyle: user.hairStyle,
     };
   },
 );
@@ -247,6 +272,37 @@ export const saveAvatarSkinTone = createServerFn({ method: "POST" })
       delete user.skinTone;
     } else {
       user.skinTone = data.skinTone;
+    }
+    await kv.put(userKey(username), JSON.stringify(user));
+  });
+
+// `hairStyle: null` means no hairstyle selected (the avatar's bald scan,
+// untouched).
+export const saveAvatarHairStyle = createServerFn({ method: "POST" })
+  .validator((data: { hairStyle: string | null }) => data)
+  .handler(async ({ data }): Promise<void> => {
+    if (
+      data.hairStyle !== null &&
+      !(HAIR_STYLE_IDS as readonly string[]).includes(data.hairStyle)
+    ) {
+      throw new Error("Estilo de cabelo inválido.");
+    }
+
+    const session = await getSession<SessionData>(sessionConfig());
+    const username = session.data.username;
+    if (!username) throw new Error("Não autenticado.");
+
+    const kv = getCloudflareEnv()?.VCLOTHES_SCANS;
+    if (!kv) throw new Error("Armazenamento indisponível no servidor.");
+
+    const raw = await kv.get(userKey(username));
+    if (!raw) throw new Error("Usuário não encontrado.");
+
+    const user = JSON.parse(raw) as StoredUser;
+    if (data.hairStyle === null) {
+      delete user.hairStyle;
+    } else {
+      user.hairStyle = data.hairStyle;
     }
     await kv.put(userKey(username), JSON.stringify(user));
   });

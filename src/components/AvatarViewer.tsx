@@ -1,28 +1,51 @@
 import { useEffect, useRef, useState } from "react";
 
 import { loadThree } from "@/lib/modelViewer";
+import { HAIR_MODEL_URL, HAIR_SCALE, HAIR_STYLES, HAIR_TOP_OFFSET_MM } from "@/lib/hairStyles";
 
 // Minimal structural type instead of importing Three.js's real types —
 // this is CDN-loaded (see lib/modelViewer.ts), not an npm dependency, so
 // there's nothing to import statically. All that's needed here is the one
 // method used to retint the material live.
 type TintedMaterial = { color: { set: (value: string) => void } };
+// Loose structural types for the pieces of Three.js this component juggles
+// across effects (scene/objects), same reasoning as TintedMaterial above.
+type Object3DLike = {
+  visible: boolean;
+  position: { y: number };
+  traverse: (cb: (child: unknown) => void) => void;
+};
+type SceneLike = { add: (obj: Object3DLike) => void };
 
 // Renders the .obj mesh 3DLOOK generates from the two photos (see
 // volume_params.body_model in the person record — not documented in their
 // public API docs, found by inspecting a real successful scan directly).
 // It has no texture/color baked in, so this gives it a flat color instead
 // of showing an untextured-white blob — `color` is how the skin tone
-// picker retints it.
+// picker retints it. `hairStyle` (see lib/hairStyles.ts) overlays one of a
+// fixed set of hairstyles from a separate CC-BY model pack, fitted onto
+// this mesh with empirically-calibrated scale/offset constants — those
+// styles were modeled for a different, unknown reference head, so this is
+// an approximate fit, not an anatomically exact one.
 export function AvatarViewer({
   modelUrl,
   color = "#b7bcc4",
+  hairStyle,
+  focus = "body",
 }: {
   modelUrl: string;
   color?: string;
+  hairStyle?: string;
+  // "head" frames a close-up on the head/shoulders instead of the whole
+  // body — used on the hairstyle picker, where the body isn't the point.
+  focus?: "body" | "head";
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const materialRef = useRef<TintedMaterial | null>(null);
+  const sceneRef = useRef<SceneLike | null>(null);
+  const bodyTopYRef = useRef<number>(0);
+  const hairNodesRef = useRef<Record<string, Object3DLike> | null>(null);
+  const hairLoadingRef = useRef<Promise<void> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,6 +63,7 @@ export function AvatarViewer({
         const height = container.clientHeight;
 
         const scene = new THREE.Scene();
+        sceneRef.current = scene as unknown as SceneLike;
         const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 100);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -105,6 +129,10 @@ export function AvatarViewer({
             object.position.x -= center.x;
             object.position.z -= center.z;
             object.position.y -= box.min.y;
+            // Feet are now at y=0, so the mesh's own height is the y of its
+            // highest point — the top of the head. The hair effect below
+            // uses this to sit hairstyles on top of whichever body loads.
+            bodyTopYRef.current = size.y;
 
             const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
@@ -130,11 +158,23 @@ export function AvatarViewer({
             controls.minDistance = maxDim * 0.6;
             controls.maxDistance = maxDim * 4;
 
-            const targetY = size.y * 0.5;
             const fovRad = (camera.fov * Math.PI) / 180;
-            const distanceForHeight = size.y / 2 / Math.tan(fovRad / 2);
-            const distanceForWidth = size.x / 2 / Math.tan(fovRad / 2) / camera.aspect;
-            const distance = Math.max(distanceForHeight, distanceForWidth) * 1.35;
+            let targetY: number;
+            let distance: number;
+            if (focus === "head") {
+              // Head + a bit of neck/shoulder, not the whole body — hair
+              // styles are hard to judge zoomed all the way out. Only
+              // height-constrained: at this crop the arms are out of frame
+              // anyway, so the body's full arm-span width doesn't matter.
+              const headFrameHeight = size.y * 0.32;
+              targetY = size.y - headFrameHeight * 0.4;
+              distance = (headFrameHeight / 2 / Math.tan(fovRad / 2)) * 1.6;
+            } else {
+              targetY = size.y * 0.5;
+              const distanceForHeight = size.y / 2 / Math.tan(fovRad / 2);
+              const distanceForWidth = size.x / 2 / Math.tan(fovRad / 2) / camera.aspect;
+              distance = Math.max(distanceForHeight, distanceForWidth) * 1.35;
+            }
             camera.position.set(0, targetY, distance);
             controls.target.set(0, targetY, 0);
             controls.update();
@@ -213,6 +253,101 @@ export function AvatarViewer({
   useEffect(() => {
     materialRef.current?.color.set(color);
   }, [color]);
+
+  // Loads the (separate, ~4.7MB) hair pack lazily — only once a hairstyle
+  // is actually selected, not on every avatar view — and only once ever
+  // per mounted viewer; after that, switching styles just flips which
+  // pre-positioned node is visible; nothing gets refetched or rebuilt.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function ensureHairLoaded() {
+      if (hairNodesRef.current) return;
+      if (!hairLoadingRef.current) {
+        hairLoadingRef.current = (async () => {
+          const { THREE, GLTFLoader } = await loadThree();
+          const scene = sceneRef.current;
+          if (!scene) return;
+
+          const gltf = await new Promise<{ scene: InstanceType<typeof THREE.Group> }>(
+            (resolve, reject) => {
+              new GLTFLoader().load(HAIR_MODEL_URL, resolve, undefined, reject);
+            },
+          );
+          if (cancelled) return;
+
+          const hairMaterial = new THREE.MeshStandardMaterial({
+            color: 0x3a2a1e,
+            roughness: 0.6,
+            metalness: 0.05,
+          });
+
+          const nodes: Record<string, Object3DLike> = {};
+          for (const style of HAIR_STYLES) {
+            let source: InstanceType<typeof THREE.Object3D> | undefined;
+            gltf.scene.traverse((obj: InstanceType<typeof THREE.Object3D>) => {
+              if (obj.name === style.node) source = obj;
+            });
+            if (!source) continue;
+
+            const hair = source.clone(true);
+            hair.traverse((child: InstanceType<typeof THREE.Object3D>) => {
+              if ((child as InstanceType<typeof THREE.Mesh>).isMesh) {
+                (child as InstanceType<typeof THREE.Mesh>).material = hairMaterial;
+              }
+            });
+            // Ignore whatever transform this node had in the original
+            // (discarded) reference scene, then recenter on its own raw
+            // geometry — see the standalone fitting test this was
+            // calibrated against.
+            hair.position.set(0, 0, 0);
+            hair.rotation.set(0, 0, 0);
+            hair.scale.set(1, 1, 1);
+            hair.updateMatrixWorld(true);
+
+            const box = new THREE.Box3().setFromObject(hair);
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            hair.position.set(-center.x, -box.max.y, -center.z);
+
+            const group = new THREE.Group();
+            group.add(hair);
+            group.scale.setScalar(HAIR_SCALE);
+            group.position.set(0, bodyTopYRef.current + HAIR_TOP_OFFSET_MM, 0);
+            group.visible = false;
+
+            scene.add(group as unknown as Object3DLike);
+            nodes[style.id] = group as unknown as Object3DLike;
+          }
+
+          if (!cancelled) hairNodesRef.current = nodes;
+        })();
+      }
+      await hairLoadingRef.current;
+    }
+
+    (async () => {
+      if (!hairStyle) {
+        if (hairNodesRef.current) {
+          for (const node of Object.values(hairNodesRef.current)) node.visible = false;
+        }
+        return;
+      }
+
+      await ensureHairLoaded();
+      if (cancelled || !hairNodesRef.current) return;
+      for (const [id, node] of Object.entries(hairNodesRef.current)) {
+        // Re-set every time (cheap) rather than only at creation, in case
+        // the body was still loading (bodyTopYRef still 0) when this ran.
+        node.position.y = bodyTopYRef.current + HAIR_TOP_OFFSET_MM;
+        node.visible = id === hairStyle;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hairStyle]);
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-2xl border hairline bg-secondary">
