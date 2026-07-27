@@ -18,10 +18,21 @@ import thumbHair08 from "@/assets/hair/hair08.png";
 // from Sketchfab (21 styles, only 15 are actual hairstyles — the rest were
 // eyebrows, dropped when trimming). Each entry's `node` is the name of the
 // node inside that file to show; every other hair node gets hidden.
-export type HairStyle = { id: string; node: string; thumb: string };
+// `scale`/`topOffsetMm` override the defaults below for a specific style —
+// needed for hair9cap/hair10cap/hair12cap (identical geometry, see the
+// comment where they're used) whose bottom rim is jagged rather than a
+// clean cut, which showed as a scalp-colored gap at the back of the neck
+// at the default scale.
+export type HairStyle = {
+  id: string;
+  node: string;
+  thumb: string;
+  scale?: number;
+  topOffsetMm?: number;
+};
 
 export const HAIR_STYLES: HairStyle[] = [
-  { id: "hair9cap", node: "hair9cap", thumb: thumbHair9cap },
+  { id: "hair9cap", node: "hair9cap", thumb: thumbHair9cap, scale: 13 },
   { id: "hair4", node: "hair4", thumb: thumbHair4 },
   { id: "hair01", node: "hair01", thumb: thumbHair01 },
   { id: "hair02", node: "hair02", thumb: thumbHair02 },
@@ -29,8 +40,8 @@ export const HAIR_STYLES: HairStyle[] = [
   { id: "hair05", node: "hair05", thumb: thumbHair05 },
   { id: "hair06", node: "hair06", thumb: thumbHair06 },
   { id: "hair07", node: "hair07", thumb: thumbHair07 },
-  { id: "hair10cap", node: "hair10cap", thumb: thumbHair10cap },
-  { id: "hair12cap", node: "hair12cap", thumb: thumbHair12cap },
+  { id: "hair10cap", node: "hair10cap", thumb: thumbHair10cap, scale: 13 },
+  { id: "hair12cap", node: "hair12cap", thumb: thumbHair12cap, scale: 13 },
   { id: "hair09", node: "hair09", thumb: thumbHair09 },
   { id: "hair10", node: "hair10", thumb: thumbHair10 },
   { id: "hair11", node: "hair11", thumb: thumbHair11 },

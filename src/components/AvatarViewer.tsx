@@ -312,8 +312,12 @@ export function AvatarViewer({
 
             const group = new THREE.Group();
             group.add(hair);
-            group.scale.setScalar(HAIR_SCALE);
-            group.position.set(0, bodyTopYRef.current + HAIR_TOP_OFFSET_MM, 0);
+            group.scale.setScalar(style.scale ?? HAIR_SCALE);
+            group.position.set(
+              0,
+              bodyTopYRef.current + (style.topOffsetMm ?? HAIR_TOP_OFFSET_MM),
+              0,
+            );
             group.visible = false;
 
             scene.add(group as unknown as Object3DLike);
@@ -339,7 +343,8 @@ export function AvatarViewer({
       for (const [id, node] of Object.entries(hairNodesRef.current)) {
         // Re-set every time (cheap) rather than only at creation, in case
         // the body was still loading (bodyTopYRef still 0) when this ran.
-        node.position.y = bodyTopYRef.current + HAIR_TOP_OFFSET_MM;
+        const offsetMm = HAIR_STYLES.find((s) => s.id === id)?.topOffsetMm ?? HAIR_TOP_OFFSET_MM;
+        node.position.y = bodyTopYRef.current + offsetMm;
         node.visible = id === hairStyle;
       }
     })();
