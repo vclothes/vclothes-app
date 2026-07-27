@@ -19,12 +19,20 @@ import {
   validatePassword,
 } from "@/lib/auth";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
+import {
+  recommendShirtSize,
+  SHIRT_SIZE_CHART,
+  SHIRT_SIZES,
+  SIZE_CHART_ROWS,
+  type ShirtSize,
+} from "@/lib/products";
 import { createScan, getScanResult, type Gender, type ScanStatus } from "@/lib/threedlook";
 import logoVClothes from "@/assets/logo-vclothes.png";
 
 const LANDING_PAGE_URL = "https://v-clothes.henriquecgfarias.workers.dev/";
 import poseFrontAvatar from "@/assets/pose-front-avatar.jpg";
 import poseSideAvatar from "@/assets/pose-side-avatar.jpg";
+import tshirtBlack from "@/assets/tshirt-black.jpg";
 
 export const Route = createFileRoute("/")({
   component: Provador,
@@ -184,6 +192,7 @@ function Provador() {
   const [result, setResult] = useState<ScanStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
+  const [selectedShirtSize, setSelectedShirtSize] = useState<ShirtSize | null>(null);
 
   function handlePickSkinTone(tone: string | null) {
     setSkinTone(tone ?? undefined);
@@ -191,6 +200,16 @@ function Provador() {
       console.error("[Provador] failed to save skin tone", err),
     );
   }
+
+  // Merges both measurement sources the same way the "result" step already
+  // does when listing them out — chest/waist tend to live in volume_params,
+  // neck/shoulders in front_params, so a size recommendation needs both.
+  const recommendedShirtSize = recommendShirtSize({
+    ...result?.volumeParams,
+    ...result?.frontParams,
+  });
+  // Defaults to the recommendation until the person taps a size themselves.
+  const activeShirtSize = selectedShirtSize ?? recommendedShirtSize;
 
   // Runs once on load — if there's already a valid session cookie, skip the
   // login screen entirely and go straight to wherever this person left off,
@@ -765,12 +784,88 @@ function Provador() {
             )}
 
             {step === "shop" && (
-              <div className="flex flex-col items-center py-24 text-center">
-                <Shirt className="h-8 w-8 text-muted-foreground" />
-                <h1 className="text-display mt-4 text-2xl text-ink">Roupas em breve</h1>
-                <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-                  Em breve você vai poder ver roupas de verdade aqui pra experimentar no seu avatar.
-                </p>
+              <div className="overflow-hidden rounded-2xl border hairline bg-card">
+                <div className="aspect-4/5 w-full bg-secondary">
+                  <img
+                    src={tshirtBlack}
+                    alt="Camiseta preta básica"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="p-5">
+                  <div className="text-xs text-muted-foreground">V-Clothes</div>
+                  <h1 className="text-display mt-1 text-2xl text-ink">Camiseta Preta Básica</h1>
+
+                  {recommendedShirtSize && (
+                    <p className="mt-3 text-sm text-foreground">
+                      Tamanho recomendado pra você:{" "}
+                      <span className="font-semibold text-primary">{recommendedShirtSize}</span>
+                    </p>
+                  )}
+
+                  <div className="mt-5">
+                    <div className="text-sm font-semibold text-ink">Tamanho</div>
+                    <div className="mt-2 flex gap-2">
+                      {SHIRT_SIZES.map((size) => (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setSelectedShirtSize(size)}
+                          aria-label={`Tamanho ${size}`}
+                          className={`flex h-11 w-14 items-center justify-center rounded-xl border-2 text-sm font-medium ${
+                            activeShirtSize === size
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border hairline text-foreground"
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <div className="text-sm font-semibold text-ink">Guia de medidas</div>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full min-w-[420px] text-sm">
+                        <thead>
+                          <tr className="border-b hairline text-left text-muted-foreground">
+                            <th className="py-2 pr-3 font-medium">Medida</th>
+                            {SHIRT_SIZES.map((size) => (
+                              <th
+                                key={size}
+                                className={`px-2 py-2 text-center font-medium ${
+                                  activeShirtSize === size ? "text-primary" : ""
+                                }`}
+                              >
+                                {size}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {SIZE_CHART_ROWS.map(({ label, key }) => (
+                            <tr key={key} className="border-b hairline last:border-0">
+                              <td className="py-2 pr-3 text-foreground">{label}</td>
+                              {SHIRT_SIZES.map((size) => (
+                                <td
+                                  key={size}
+                                  className={`px-2 py-2 text-center ${
+                                    activeShirtSize === size
+                                      ? "font-semibold text-primary"
+                                      : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {SHIRT_SIZE_CHART[size][key]} cm
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
