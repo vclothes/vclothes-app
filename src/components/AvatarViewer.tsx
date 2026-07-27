@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import { loadThree } from "@/lib/modelViewer";
-import { HAIR_MODEL_URL, HAIR_SCALE, HAIR_STYLES, HAIR_TOP_OFFSET_MM } from "@/lib/hairStyles";
+import hairTextureUrl from "@/assets/hair-texture.jpg";
+import {
+  HAIR_MODEL_URL,
+  HAIR_SCALE,
+  HAIR_STYLES,
+  HAIR_TOP_OFFSET_MM,
+  REFERENCE_HEAD_WIDTH_MM,
+} from "@/lib/hairStyles";
 
 // Minimal structural type instead of importing Three.js's real types —
 // this is CDN-loaded (see lib/modelViewer.ts), not an npm dependency, so
@@ -13,6 +20,7 @@ type TintedMaterial = { color: { set: (value: string) => void } };
 type Object3DLike = {
   visible: boolean;
   position: { y: number };
+  scale: { setScalar: (s: number) => void };
   traverse: (cb: (child: unknown) => void) => void;
 };
 type SceneLike = { add: (obj: Object3DLike) => void };
@@ -44,6 +52,7 @@ export function AvatarViewer({
   const materialRef = useRef<TintedMaterial | null>(null);
   const sceneRef = useRef<SceneLike | null>(null);
   const bodyTopYRef = useRef<number>(0);
+  const headWidthRef = useRef<number>(0);
   const hairNodesRef = useRef<Record<string, Object3DLike> | null>(null);
   const hairLoadingRef = useRef<Promise<void> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +67,34 @@ export function AvatarViewer({
         const { THREE, OBJLoader, OrbitControls } = await loadThree();
         const container = containerRef.current;
         if (cancelled || !container) return;
+
+        // Samples every vertex within a horizontal band near the crown
+        // (1%-3.5% of total height below the top, in world space — matches
+        // where this was calibrated by hand against a real scan) and
+        // returns how wide the head reads there. Proportional to height
+        // rather than a fixed mm band, so it still lands on the head
+        // regardless of how tall this particular scan is.
+        function measureHeadWidth(obj: InstanceType<typeof THREE.Object3D>, topY: number): number {
+          let minX = Infinity;
+          let maxX = -Infinity;
+          const sliceTop = topY - topY * 0.01;
+          const sliceBottom = topY - topY * 0.035;
+          const v = new THREE.Vector3();
+          obj.traverse((child: InstanceType<typeof THREE.Object3D>) => {
+            const mesh = child as InstanceType<typeof THREE.Mesh>;
+            if (!mesh.isMesh) return;
+            const posAttr = mesh.geometry.attributes.position;
+            for (let i = 0; i < posAttr.count; i++) {
+              v.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+              mesh.localToWorld(v);
+              if (v.y >= sliceBottom && v.y <= sliceTop) {
+                if (v.x < minX) minX = v.x;
+                if (v.x > maxX) maxX = v.x;
+              }
+            }
+          });
+          return maxX > minX ? maxX - minX : 0;
+        }
 
         const width = container.clientWidth;
         const height = container.clientHeight;
@@ -133,6 +170,14 @@ export function AvatarViewer({
             // highest point — the top of the head. The hair effect below
             // uses this to sit hairstyles on top of whichever body loads.
             bodyTopYRef.current = size.y;
+
+            // Every scan is a different size — measure THIS avatar's actual
+            // head width (a horizontal slice near the crown, in world space
+            // after the centering above) instead of assuming everyone
+            // matches the one real scan the hair scale was calibrated
+            // against. The hair effect below scales proportionally to
+            // whatever this comes out to.
+            headWidthRef.current = measureHeadWidth(object, size.y);
 
             const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
@@ -276,10 +321,34 @@ export function AvatarViewer({
           );
           if (cancelled) return;
 
+          // AI-generated (nano_banana_2, prompted for a seamless tileable
+          // strand pattern) — the pack came with no textures at all, just
+          // a flat gray material, so this is what actually makes it read
+          // as hair up close instead of a solid-color shape. Repeated
+          // rather than mapped 1:1, since a flat close-up strand pattern
+          // still looks like hair at reasonable tiling regardless of
+          // exactly how this mesh's own UVs are laid out — color comes
+          // from the texture itself now, so the material's own color is
+          // left white rather than tinting on top of it.
+          const hairTexture = new THREE.TextureLoader().load(hairTextureUrl);
+          hairTexture.wrapS = THREE.RepeatWrapping;
+          hairTexture.wrapT = THREE.RepeatWrapping;
+          hairTexture.repeat.set(1.5, 1.5);
+          hairTexture.colorSpace = THREE.SRGBColorSpace;
+
           const hairMaterial = new THREE.MeshStandardMaterial({
-            color: 0x3a2a1e,
-            roughness: 0.6,
+            map: hairTexture,
+            color: 0xffffff,
+            roughness: 0.45,
             metalness: 0.05,
+            // The source photo has real shadow between strands baked in,
+            // and on top of that PBR shading darkens it further wherever
+            // the scene's own lights don't hit — combined, it read as
+            // almost solid black. A modest emissive pass of the same
+            // texture keeps the darks from crushing without going flat.
+            emissiveMap: hairTexture,
+            emissive: 0xffffff,
+            emissiveIntensity: 0.25,
           });
 
           const nodes: Record<string, Object3DLike> = {};
@@ -310,12 +379,19 @@ export function AvatarViewer({
             box.getCenter(center);
             hair.position.set(-center.x, -box.max.y, -center.z);
 
+            // Scales (and lifts) proportionally to how this specific
+            // avatar's head measured, relative to the one real scan this
+            // was calibrated against — not the same fixed size for every
+            // person.
+            const headWidthFactor =
+              headWidthRef.current > 0 ? headWidthRef.current / REFERENCE_HEAD_WIDTH_MM : 1;
+
             const group = new THREE.Group();
             group.add(hair);
-            group.scale.setScalar(style.scale ?? HAIR_SCALE);
+            group.scale.setScalar((style.scale ?? HAIR_SCALE) * headWidthFactor);
             group.position.set(
               0,
-              bodyTopYRef.current + (style.topOffsetMm ?? HAIR_TOP_OFFSET_MM),
+              bodyTopYRef.current + (style.topOffsetMm ?? HAIR_TOP_OFFSET_MM) * headWidthFactor,
               0,
             );
             group.visible = false;
@@ -340,11 +416,16 @@ export function AvatarViewer({
 
       await ensureHairLoaded();
       if (cancelled || !hairNodesRef.current) return;
+      const headWidthFactor =
+        headWidthRef.current > 0 ? headWidthRef.current / REFERENCE_HEAD_WIDTH_MM : 1;
       for (const [id, node] of Object.entries(hairNodesRef.current)) {
         // Re-set every time (cheap) rather than only at creation, in case
-        // the body was still loading (bodyTopYRef still 0) when this ran.
-        const offsetMm = HAIR_STYLES.find((s) => s.id === id)?.topOffsetMm ?? HAIR_TOP_OFFSET_MM;
-        node.position.y = bodyTopYRef.current + offsetMm;
+        // the body was still loading (bodyTopYRef/headWidthRef still 0)
+        // when this ran.
+        const style = HAIR_STYLES.find((s) => s.id === id);
+        const offsetMm = style?.topOffsetMm ?? HAIR_TOP_OFFSET_MM;
+        node.scale.setScalar((style?.scale ?? HAIR_SCALE) * headWidthFactor);
+        node.position.y = bodyTopYRef.current + offsetMm * headWidthFactor;
         node.visible = id === hairStyle;
       }
     })();

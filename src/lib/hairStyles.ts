@@ -62,3 +62,11 @@ export const HAIR_MODEL_URL = "/hair.glb";
 // head-top for the same reason.
 export const HAIR_SCALE = 11.5;
 export const HAIR_TOP_OFFSET_MM = 25;
+
+// The head width (mm, measured across a horizontal slice near the top of
+// the real scan HAIR_SCALE/topOffsetMm were calibrated against — see
+// AvatarViewer's headWidthRef). Every avatar's hair scale gets multiplied
+// by (that avatar's own measured head width / this number), so a wider or
+// narrower head than the one this was tuned on still gets a proportional
+// fit instead of everyone sharing one fixed size.
+export const REFERENCE_HEAD_WIDTH_MM = 144.3;
