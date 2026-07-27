@@ -856,11 +856,6 @@ function Provador() {
                       </p>
                     )}
 
-                    {/* TEMP DEBUG — remove once the size-matching keys are confirmed correct. */}
-                    <pre className="mt-3 overflow-x-auto rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
-                      {JSON.stringify({ ...result?.volumeParams, ...result?.frontParams }, null, 2)}
-                    </pre>
-
                     <div className="mt-5">
                       <div className="text-sm font-semibold text-ink">Tamanho</div>
                       <div className="mt-2 flex gap-2">

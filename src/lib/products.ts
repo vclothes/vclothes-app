@@ -80,16 +80,28 @@ export const SIZE_CHART_ROWS: { label: string; key: keyof SizeSpec }[] = [
   { label: "Comprimento da manga", key: "sleeveCm" },
 ];
 
-// volume_params/front_params keys (see measurements.ts) that correspond to
-// each size-chart column this garment can actually be matched against.
-// "lengthCm" has no body-measurement equivalent (it's a garment spec, not
-// something 3DLOOK measures), so it's left out of matching on purpose.
+// volume_params/front_params keys that correspond to each size-chart column
+// this garment can actually be matched against. "lengthCm" has no
+// body-measurement equivalent (it's a garment spec, not something 3DLOOK
+// measures), so it's left out of matching on purpose.
+//
+// The obvious key names ("waist", "high_hips", "neck") are NOT the actual
+// circumferences — confirmed against a real scan's raw JSON, they come back
+// as small, unrelated numbers (e.g. "neck": 12.8, "waist": 33.79) that have
+// nothing to do with the person's real measurements, while the correct
+// circumference lives under a differently-named key that matches 3DLOOK's
+// own dashboard values almost exactly. Using the wrong ones was silently
+// recommending "P" for nearly everyone, since those three bogus values sit
+// far below every size in the chart and swamp the (correct) chest/shoulders
+// signal with a near-constant penalty that happens to favor the smallest
+// size. Do not "fix" this back to the obvious names without re-checking
+// against a real scan's raw output first.
 const MATCH_KEYS: { specKey: keyof SizeSpec; scanKeys: string[] }[] = [
   { specKey: "chestCm", scanKeys: ["chest"] },
-  { specKey: "waistCm", scanKeys: ["waist"] },
-  { specKey: "hipCm", scanKeys: ["high_hips"] },
+  { specKey: "waistCm", scanKeys: ["alternative_waist_girth", "pant_waist", "waist_gray"] },
+  { specKey: "hipCm", scanKeys: ["low_hips"] },
   { specKey: "shoulderCm", scanKeys: ["shoulders"] },
-  { specKey: "collarCm", scanKeys: ["neck", "neck_girth"] },
+  { specKey: "collarCm", scanKeys: ["neck_girth", "neck_girth_relaxed"] },
 ];
 
 // Picks whichever size's chart values are closest overall to this person's
