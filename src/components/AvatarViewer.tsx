@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { computeShirtFit } from "@/lib/garmentFit";
 import { loadThree } from "@/lib/modelViewer";
 
 // Minimal structural type instead of importing Three.js's real types —
@@ -7,22 +8,38 @@ import { loadThree } from "@/lib/modelViewer";
 // there's nothing to import statically. All that's needed here is the one
 // method used to retint the material live.
 type TintedMaterial = { color: { set: (value: string) => void } };
+type Object3DLike = {
+  visible: boolean;
+  traverse: (cb: (child: unknown) => void) => void;
+};
+type SceneLike = { add: (obj: Object3DLike) => void; remove: (obj: Object3DLike) => void };
 
 // Renders the .obj mesh 3DLOOK generates from the two photos (see
 // volume_params.body_model in the person record — not documented in their
 // public API docs, found by inspecting a real successful scan directly).
 // It has no texture/color baked in, so this gives it a flat color instead
 // of showing an untextured-white blob — `color` is how the skin tone
-// picker retints it.
+// picker retints it. `showShirt` overlays a simple 3D "shirt shell" fitted
+// to `scanMeasurements` (see lib/garmentFit.ts) — not a real garment mesh
+// or cloth simulation, just a shape that roughly reads as "wearing a plain
+// t-shirt" and rotates with the body.
 export function AvatarViewer({
   modelUrl,
   color = "#b7bcc4",
+  showShirt = false,
+  scanMeasurements,
 }: {
   modelUrl: string;
   color?: string;
+  showShirt?: boolean;
+  scanMeasurements?: Record<string, number | null>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const materialRef = useRef<TintedMaterial | null>(null);
+  const sceneRef = useRef<SceneLike | null>(null);
+  const bodyObjectRef = useRef<Object3DLike | null>(null);
+  const bodyTopYRef = useRef<number>(0);
+  const shirtGroupRef = useRef<Object3DLike | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,6 +57,7 @@ export function AvatarViewer({
         const height = container.clientHeight;
 
         const scene = new THREE.Scene();
+        sceneRef.current = scene as unknown as SceneLike;
         const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 100);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -105,6 +123,9 @@ export function AvatarViewer({
             object.position.x -= center.x;
             object.position.z -= center.z;
             object.position.y -= box.min.y;
+            object.updateMatrixWorld(true);
+            bodyObjectRef.current = object as unknown as Object3DLike;
+            bodyTopYRef.current = size.y;
 
             const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
@@ -177,6 +198,9 @@ export function AvatarViewer({
           renderer.dispose();
           material.dispose();
           materialRef.current = null;
+          sceneRef.current = null;
+          bodyObjectRef.current = null;
+          shirtGroupRef.current = null;
           scene.traverse((child: InstanceType<typeof THREE.Object3D>) => {
             const mesh = child as InstanceType<typeof THREE.Mesh>;
             if (!mesh.isMesh) return;
@@ -213,6 +237,98 @@ export function AvatarViewer({
   useEffect(() => {
     materialRef.current?.color.set(color);
   }, [color]);
+
+  // Builds the shirt shell once the body has loaded and `showShirt` is on.
+  // Runs on a short poll rather than a load-event, since the body finishes
+  // loading asynchronously inside the effect above and there's no signal
+  // exposed here for "body just became available" beyond the refs it sets.
+  useEffect(() => {
+    if (!showShirt) return;
+    let cancelled = false;
+
+    const tryBuild = async () => {
+      const scene = sceneRef.current;
+      const body = bodyObjectRef.current;
+      if (!scene || !body || !bodyTopYRef.current) {
+        if (!cancelled) requestAnimationFrame(() => void tryBuild());
+        return;
+      }
+
+      const fit = computeShirtFit(scanMeasurements, bodyTopYRef.current);
+      if (!fit) return;
+
+      const { THREE } = await loadThree();
+      if (cancelled) return;
+
+      // A t-shirt sits a little outside the body, not skin-tight.
+      const PAD = 1.12;
+      const points = [
+        new THREE.Vector2(fit.shoulderHalfWidthMm * PAD, fit.shoulderY),
+        new THREE.Vector2(fit.chestRadiusMm * PAD, fit.chestY),
+        new THREE.Vector2(fit.waistRadiusMm * PAD, fit.waistY),
+        new THREE.Vector2(fit.hemRadiusMm * PAD, fit.hemY),
+      ];
+      const torsoGeo = new THREE.LatheGeometry(points, 32);
+
+      const shirtMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1a1a1a,
+        roughness: 0.75,
+        metalness: 0.02,
+        // LatheGeometry's winding leaves the outward-facing surface
+        // invisible under the default front-face-only culling — without
+        // this the whole shirt renders as empty space from outside the
+        // body.
+        side: THREE.DoubleSide,
+      });
+
+      const torso = new THREE.Mesh(torsoGeo, shirtMaterial);
+      // Torsos read as oval (wider than deep), not perfectly round -
+      // flatten the lathe's circular cross-section toward a realistic
+      // depth:width ratio.
+      torso.scale.z = 0.72;
+
+      const shirtGroup = new THREE.Group();
+      shirtGroup.add(torso);
+
+      const sleeveLength = fit.shoulderHalfWidthMm * 0.48;
+      const sleeveRadius = fit.shoulderHalfWidthMm * PAD * 0.45;
+      for (const side of [-1, 1]) {
+        const sleeveGeo = new THREE.CylinderGeometry(
+          sleeveRadius,
+          sleeveRadius * 1.08,
+          sleeveLength,
+          16,
+          1,
+          true,
+        );
+        const sleeve = new THREE.Mesh(sleeveGeo, shirtMaterial);
+        const shoulderX = side * fit.shoulderHalfWidthMm * PAD * 0.9;
+        sleeve.position.set(shoulderX, fit.shoulderY - sleeveLength * 0.35, 0);
+        sleeve.rotation.z = side * (Math.PI / 2 - 0.35);
+        shirtGroup.add(sleeve);
+      }
+
+      scene.add(shirtGroup as unknown as Object3DLike);
+      shirtGroupRef.current = shirtGroup as unknown as Object3DLike;
+    };
+
+    void tryBuild();
+
+    return () => {
+      cancelled = true;
+      const scene = sceneRef.current;
+      const group = shirtGroupRef.current;
+      if (scene && group) {
+        scene.remove(group);
+        group.traverse((child: unknown) => {
+          const mesh = child as { isMesh?: boolean; geometry?: { dispose: () => void } };
+          if (!mesh?.isMesh) return;
+          mesh.geometry?.dispose?.();
+        });
+      }
+      shirtGroupRef.current = null;
+    };
+  }, [showShirt, scanMeasurements]);
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-2xl border hairline bg-secondary">

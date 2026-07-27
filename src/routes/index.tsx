@@ -52,6 +52,7 @@ type Step =
   | "customize"
   | "shop"
   | "product"
+  | "try_on"
   | "looks"
   | "error";
 
@@ -68,6 +69,7 @@ const STEP_NUMBER: Record<Step, number> = {
   customize: 6,
   shop: 7,
   product: 7,
+  try_on: 7,
   looks: 7,
   error: 5,
 };
@@ -344,6 +346,7 @@ function Provador() {
   const isShopSection =
     step === "shop" ||
     step === "product" ||
+    step === "try_on" ||
     step === "avatar" ||
     step === "customize" ||
     step === "looks";
@@ -926,7 +929,49 @@ function Provador() {
                         </table>
                       </div>
                     </div>
+
+                    <Button
+                      className="mt-6 w-full"
+                      disabled={!result?.modelUrl}
+                      onClick={() => setStep("try_on")}
+                    >
+                      Experimentar
+                    </Button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {step === "try_on" && selectedProduct && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setStep("product")}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:underline"
+                >
+                  ← Voltar
+                </button>
+
+                <div className="text-mono mb-2 mt-5 text-primary">Experimentar</div>
+                <h1 className="text-display text-4xl text-ink">{selectedProduct.name}</h1>
+                <p className="mt-3 text-muted-foreground">
+                  Uma forma simples ajustada às suas medidas — não é uma simulação real de tecido,
+                  mas gira junto com o avatar.
+                </p>
+
+                <div className="mt-6">
+                  {result?.modelUrl ? (
+                    <AvatarViewer
+                      modelUrl={result.modelUrl}
+                      color={skinTone}
+                      showShirt
+                      scanMeasurements={mergedMeasurements}
+                    />
+                  ) : (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -968,7 +1013,9 @@ function Provador() {
               type="button"
               onClick={() => setStep("shop")}
               className={`flex flex-col items-center gap-1 py-3 text-xs ${
-                step === "shop" || step === "product" ? "text-ink" : "text-muted-foreground"
+                step === "shop" || step === "product" || step === "try_on"
+                  ? "text-ink"
+                  : "text-muted-foreground"
               }`}
             >
               <Shirt className="h-5 w-5" />
