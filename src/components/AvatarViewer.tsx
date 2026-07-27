@@ -344,11 +344,15 @@ export function AvatarViewer({
             // The source photo has real shadow between strands baked in,
             // and on top of that PBR shading darkens it further wherever
             // the scene's own lights don't hit — combined, it read as
-            // almost solid black. A modest emissive pass of the same
-            // texture keeps the darks from crushing without going flat.
-            emissiveMap: hairTexture,
-            emissive: 0xffffff,
-            emissiveIntensity: 0.25,
+            // almost solid black. A flat (untextured) emissive lifts the
+            // darks without crushing them. Using the texture itself as the
+            // emissiveMap (an earlier attempt) was wrong: emissive ignores
+            // surface shading, so the photo's own bright highlight streaks
+            // showed through at full strength on every facet regardless of
+            // its angle to the light — reading as odd metallic bands
+            // cutting across the hair instead of natural highlights.
+            emissive: 0x2a2018,
+            emissiveIntensity: 0.35,
           });
 
           const nodes: Record<string, Object3DLike> = {};
