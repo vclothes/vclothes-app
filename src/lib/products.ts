@@ -122,13 +122,25 @@ function resolveScanValue(scan: Record<string, number | null>, specKey: keyof Si
   return scanKeys.map((k) => scan[k]).find((v): v is number => typeof v === "number") ?? null;
 }
 
-// Picks whichever size's chart values are closest overall to this person's
-// own scan measurements (least total absolute difference across whichever
-// of chest/waist/hip/shoulders/collar the scan actually returned) — garment
-// sizing always runs a bit large over the body it's meant to fit, but
-// nearest-match is a reasonable default without a real ease/fit model.
+// How far over a size's own spec a measurement is allowed to run before that
+// size no longer fits and the next one up gets tried instead. A body
+// measurement doesn't need to be exactly equal to (or under) the garment
+// spec — there's normally some ease built into a size already — but past
+// this margin the shirt would actually be tight there in real life.
+const FIT_TOLERANCE_CM = 2;
+
+// Walks sizes from smallest to largest and returns the first one where
+// every measurement the scan actually has (chest/waist/hip/shoulders/collar)
+// is within FIT_TOLERANCE_CM of that size's own spec — i.e. the smallest
+// size that still fits, not just whichever size is numerically closest on
+// average. A single measurement running larger than a size allows (e.g. a
+// hip well past that size's hip spec, even if chest/shoulders would fit
+// fine) is enough on its own to bump the recommendation up to the next
+// size, since the old "closest overall" approach could recommend a size
+// that's too tight in one spot as long as it averaged out.
 // Returns null if the scan didn't include enough overlapping measurements
-// to make a meaningful comparison.
+// to make a meaningful comparison; returns the largest size if even that
+// one runs over on something (there's nothing bigger to offer instead).
 export function recommendShirtSize(
   scan: Record<string, number | null> | undefined,
 ): ShirtSize | null {
@@ -137,24 +149,16 @@ export function recommendShirtSize(
   const usableKeys = RECOMMENDATION_KEYS.filter((k) => resolveScanValue(scan, k) != null);
   if (usableKeys.length === 0) return null;
 
-  let best: ShirtSize | null = null;
-  let bestScore = Infinity;
-
   for (const size of SHIRT_SIZES) {
     const spec = SHIRT_SIZE_CHART[size];
-    let score = 0;
-    for (const specKey of usableKeys) {
+    const fits = usableKeys.every((specKey) => {
       const scanValue = resolveScanValue(scan, specKey);
-      if (scanValue == null) continue;
-      score += Math.abs(scanValue - spec[specKey]);
-    }
-    if (score < bestScore) {
-      bestScore = score;
-      best = size;
-    }
+      return scanValue == null || scanValue - spec[specKey] <= FIT_TOLERANCE_CM;
+    });
+    if (fits) return size;
   }
 
-  return best;
+  return SHIRT_SIZES[SHIRT_SIZES.length - 1];
 }
 
 // The person's own measurement for each size-guide row that has a body
