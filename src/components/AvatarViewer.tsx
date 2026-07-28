@@ -260,12 +260,25 @@ export function AvatarViewer({
       const { THREE } = await loadThree();
       if (cancelled) return;
 
-      // A t-shirt sits a little outside the body, not skin-tight.
-      const PAD = 1.12;
+      // A t-shirt sits a little outside the body, not skin-tight. Bumped up
+      // from 1.12 - at that padding the shirt surface sat close enough to
+      // the belly that the two z-fought (flickering, patchy gaps where the
+      // skin showed through instead of solid black).
+      const PAD = 1.25;
+      // Extra clearance right at the waist specifically, since that's
+      // where a fuller belly is most likely to push past a padding factor
+      // tuned against the chest/shoulders.
+      const WAIST_PAD_EXTRA = 1.08;
+      // A small collar taper above the shoulder line instead of cutting the
+      // torso off flat there - closes most of the bare-neck gap and reads
+      // as an actual crew-neck opening rather than a hard edge.
+      const collarY = fit.shoulderY + (fit.chestY - fit.hemY) * 0.08;
+      const collarRadius = fit.shoulderHalfWidthMm * 0.6;
       const points = [
+        new THREE.Vector2(collarRadius, collarY),
         new THREE.Vector2(fit.shoulderHalfWidthMm * PAD, fit.shoulderY),
         new THREE.Vector2(fit.chestRadiusMm * PAD, fit.chestY),
-        new THREE.Vector2(fit.waistRadiusMm * PAD, fit.waistY),
+        new THREE.Vector2(fit.waistRadiusMm * PAD * WAIST_PAD_EXTRA, fit.waistY),
         new THREE.Vector2(fit.hemRadiusMm * PAD, fit.hemY),
       ];
       const torsoGeo = new THREE.LatheGeometry(points, 32);
@@ -304,7 +317,11 @@ export function AvatarViewer({
         const sleeve = new THREE.Mesh(sleeveGeo, shirtMaterial);
         const shoulderX = side * fit.shoulderHalfWidthMm * PAD * 0.9;
         sleeve.position.set(shoulderX, fit.shoulderY - sleeveLength * 0.35, 0);
-        sleeve.rotation.z = side * (Math.PI / 2 - 0.35);
+        // A cylinder's own axis already runs vertically (matching an arm
+        // hanging down) - this only needs a slight outward tilt, not a
+        // rotation toward horizontal. `Math.PI / 2 - 0.35` (~70°) tipped it
+        // almost flat, reading as a horizontal wing instead of a sleeve.
+        sleeve.rotation.z = side * 0.3;
         shirtGroup.add(sleeve);
       }
 
