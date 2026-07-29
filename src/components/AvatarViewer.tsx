@@ -309,8 +309,13 @@ export function AvatarViewer({
       const shirtGroup = new THREE.Group();
       shirtGroup.add(torso);
 
-      const sleeveLength = fit.shoulderHalfWidthMm * 0.48;
-      const sleeveRadius = fit.shoulderHalfWidthMm * PAD * 0.45;
+      // Length must clearly exceed radius, or the cylinder reads as a flat
+      // disc/puck rather than a tube - which is what was happening: radius
+      // (0.45·PAD ≈ 0.56) was actually bigger than length (0.48), so even
+      // rotated near-vertical the short, wide shape looked like a flat
+      // wing instead of an arm.
+      const sleeveLength = fit.shoulderHalfWidthMm * 1.1;
+      const sleeveRadius = fit.shoulderHalfWidthMm * 0.32;
       for (const side of [-1, 1]) {
         // Capped (not open-ended) - an open tube showed its hollow inside
         // surface at the cuff instead of looking like solid fabric.
@@ -323,8 +328,8 @@ export function AvatarViewer({
           false,
         );
         const sleeve = new THREE.Mesh(sleeveGeo, shirtMaterial);
-        const shoulderX = side * fit.shoulderHalfWidthMm * PAD * 0.9;
-        sleeve.position.set(shoulderX, fit.shoulderY - sleeveLength * 0.35, 0);
+        const shoulderX = side * fit.shoulderHalfWidthMm * PAD * 0.85;
+        sleeve.position.set(shoulderX, fit.shoulderY - sleeveLength * 0.45, 0);
         // A cylinder's own axis already runs vertically (matching an arm
         // hanging down) - this only needs a slight outward tilt, not a
         // rotation toward horizontal. `Math.PI / 2 - 0.35` (~70°) tipped it
