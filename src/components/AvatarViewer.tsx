@@ -274,13 +274,19 @@ export function AvatarViewer({
       // as an actual crew-neck opening rather than a hard edge.
       const collarY = fit.shoulderY + (fit.chestY - fit.hemY) * 0.08;
       const collarRadius = fit.shoulderHalfWidthMm * 0.6;
-      const points = [
+      const controlPoints = [
         new THREE.Vector2(collarRadius, collarY),
         new THREE.Vector2(fit.shoulderHalfWidthMm * PAD, fit.shoulderY),
         new THREE.Vector2(fit.chestRadiusMm * PAD, fit.chestY),
         new THREE.Vector2(fit.waistRadiusMm * PAD * WAIST_PAD_EXTRA, fit.waistY),
         new THREE.Vector2(fit.hemRadiusMm * PAD, fit.hemY),
       ];
+      // Only 5 hard corners reads as a stack of cones (visible creases at
+      // each landmark) rather than a body's actual smooth curve - running
+      // them through a spline and resampling densely gives a torso that
+      // curves continuously instead of faceting at every measurement point.
+      const profileCurve = new THREE.SplineCurve(controlPoints);
+      const points = profileCurve.getPoints(24);
       const torsoGeo = new THREE.LatheGeometry(points, 32);
 
       const shirtMaterial = new THREE.MeshStandardMaterial({
@@ -306,13 +312,15 @@ export function AvatarViewer({
       const sleeveLength = fit.shoulderHalfWidthMm * 0.48;
       const sleeveRadius = fit.shoulderHalfWidthMm * PAD * 0.45;
       for (const side of [-1, 1]) {
+        // Capped (not open-ended) - an open tube showed its hollow inside
+        // surface at the cuff instead of looking like solid fabric.
         const sleeveGeo = new THREE.CylinderGeometry(
           sleeveRadius,
           sleeveRadius * 1.08,
           sleeveLength,
           16,
           1,
-          true,
+          false,
         );
         const sleeve = new THREE.Mesh(sleeveGeo, shirtMaterial);
         const shoulderX = side * fit.shoulderHalfWidthMm * PAD * 0.9;
