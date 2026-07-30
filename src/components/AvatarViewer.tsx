@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { computeGarmentScale, GARMENT_COLLAR_HEIGHT_FRACTION } from "@/lib/garmentFit";
 import { loadThree } from "@/lib/modelViewer";
 
 // Minimal structural type instead of importing Three.js's real types —
@@ -8,40 +7,23 @@ import { loadThree } from "@/lib/modelViewer";
 // there's nothing to import statically. All that's needed here is the one
 // method used to retint the material live.
 type TintedMaterial = { color: { set: (value: string) => void } };
-type Object3DLike = {
-  visible: boolean;
-  traverse: (cb: (child: unknown) => void) => void;
-};
-type SceneLike = { add: (obj: Object3DLike) => void; remove: (obj: Object3DLike) => void };
 
 // Renders the .obj mesh 3DLOOK generates from the two photos (see
 // volume_params.body_model in the person record — not documented in their
 // public API docs, found by inspecting a real successful scan directly).
 // It has no texture/color baked in, so this gives it a flat color instead
 // of showing an untextured-white blob — `color` is how the skin tone
-// picker retints it. `showShirt` overlays a real garment mesh
-// (public/shirt.glb — a free CLO-simulated t-shirt asset, not something we
-// built or AI-generated) scaled to `scanMeasurements` (see
-// lib/garmentFit.ts) — no cloth simulation, the shape is fixed, but it's
-// real garment geometry rather than a hand-built shell, and it rotates
-// with the body.
+// picker retints it. Garment try-on is a separate, AI-generated 2D photo
+// (see lib/tryOn.ts) rather than anything overlaid on this 3D model.
 export function AvatarViewer({
   modelUrl,
   color = "#b7bcc4",
-  showShirt = false,
-  scanMeasurements,
 }: {
   modelUrl: string;
   color?: string;
-  showShirt?: boolean;
-  scanMeasurements?: Record<string, number | null>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const materialRef = useRef<TintedMaterial | null>(null);
-  const sceneRef = useRef<SceneLike | null>(null);
-  const bodyObjectRef = useRef<Object3DLike | null>(null);
-  const bodyTopYRef = useRef<number>(0);
-  const shirtGroupRef = useRef<Object3DLike | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -59,7 +41,6 @@ export function AvatarViewer({
         const height = container.clientHeight;
 
         const scene = new THREE.Scene();
-        sceneRef.current = scene as unknown as SceneLike;
         const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 100);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -126,8 +107,6 @@ export function AvatarViewer({
             object.position.z -= center.z;
             object.position.y -= box.min.y;
             object.updateMatrixWorld(true);
-            bodyObjectRef.current = object as unknown as Object3DLike;
-            bodyTopYRef.current = size.y;
 
             const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
@@ -200,9 +179,6 @@ export function AvatarViewer({
           renderer.dispose();
           material.dispose();
           materialRef.current = null;
-          sceneRef.current = null;
-          bodyObjectRef.current = null;
-          shirtGroupRef.current = null;
           scene.traverse((child: InstanceType<typeof THREE.Object3D>) => {
             const mesh = child as InstanceType<typeof THREE.Mesh>;
             if (!mesh.isMesh) return;
@@ -239,98 +215,6 @@ export function AvatarViewer({
   useEffect(() => {
     materialRef.current?.color.set(color);
   }, [color]);
-
-  // Loads the real garment asset once the body is ready and `showShirt` is
-  // on. Runs on a short poll rather than a load-event, since the body
-  // finishes loading asynchronously inside the effect above and there's no
-  // signal exposed here for "body just became available" beyond the refs
-  // it sets.
-  useEffect(() => {
-    if (!showShirt) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const tryBuild = async () => {
-      const scene = sceneRef.current;
-      const body = bodyObjectRef.current;
-      if (!scene || !body || !bodyTopYRef.current) {
-        // A setTimeout poll rather than requestAnimationFrame - rAF only
-        // fires while the tab is actively compositing frames, which a
-        // backgrounded/inactive tab can suspend indefinitely, silently
-        // stalling this retry forever.
-        if (!cancelled) retryTimer = setTimeout(() => void tryBuild(), 100);
-        return;
-      }
-
-      const scaleFactor = computeGarmentScale(scanMeasurements);
-      if (scaleFactor == null) return;
-
-      const { THREE, GLTFLoader } = await loadThree();
-      if (cancelled) return;
-
-      const gltf = await new Promise<{ scene: InstanceType<typeof THREE.Group> }>(
-        (resolve, reject) => {
-          new GLTFLoader().load("/shirt.glb", resolve, undefined, reject);
-        },
-      );
-      if (cancelled) return;
-
-      const shirt = gltf.scene;
-      const box = new THREE.Box3().setFromObject(shirt);
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-      shirt.position.x -= center.x;
-      shirt.position.z -= center.z;
-
-      // Scale around the collar (the garment's own top point) rather than
-      // its geometric center, so the shoulders/neckline stay anchored to
-      // the avatar's own shoulder line and only the torso grows outward
-      // and down as the scale factor increases — scaling around the
-      // center would instead push the collar up past the neck for anyone
-      // bigger than the reference size.
-      const collarY = box.max.y;
-      shirt.scale.setScalar(scaleFactor);
-      shirt.position.y = collarY * (1 - scaleFactor);
-
-      const shirtGroup = new THREE.Group();
-      shirtGroup.add(shirt);
-      // Anchors the (now scale-compensated) collar point to this avatar's
-      // own shoulder line, proportional to its own height - the garment's
-      // native Y coordinates were authored for whatever reference body its
-      // creator simulated it on, not this specific avatar.
-      // The child's own position/scale (above) already keeps the collar
-      // point fixed at local Y=collarY within this group regardless of
-      // scaleFactor, so no extra scaling applies here.
-      shirtGroup.position.y = bodyTopYRef.current * GARMENT_COLLAR_HEIGHT_FRACTION - collarY;
-
-      scene.add(shirtGroup as unknown as Object3DLike);
-      shirtGroupRef.current = shirtGroup as unknown as Object3DLike;
-    };
-
-    void tryBuild();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
-      const scene = sceneRef.current;
-      const group = shirtGroupRef.current;
-      if (scene && group) {
-        scene.remove(group);
-        group.traverse((child: unknown) => {
-          const mesh = child as {
-            isMesh?: boolean;
-            geometry?: { dispose: () => void };
-            material?: { map?: { dispose: () => void }; dispose: () => void };
-          };
-          if (!mesh?.isMesh) return;
-          mesh.geometry?.dispose?.();
-          mesh.material?.map?.dispose?.();
-          mesh.material?.dispose?.();
-        });
-      }
-      shirtGroupRef.current = null;
-    };
-  }, [showShirt, scanMeasurements]);
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-2xl border hairline bg-secondary">

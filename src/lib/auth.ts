@@ -9,9 +9,11 @@ import type { ScanStatus } from "./threedlook";
 // least 32 characters (enforced by the underlying iron-webcrypto seal) and
 // must never be hardcoded — it lives in the SESSION_SECRET server env var,
 // set the same way THREEDLOOK_API_KEY already is.
-type SessionData = { username?: string };
+export type SessionData = { username?: string };
 
-function sessionConfig() {
+// Exported alongside userKey/StoredUser below for tryOn.ts, which needs the
+// same session/user-record plumbing to look up a person's stored front photo.
+export function sessionConfig() {
   const password = process.env.SESSION_SECRET;
   if (!password) {
     throw new Error("SESSION_SECRET não configurada no servidor.");
@@ -27,13 +29,18 @@ function sessionConfig() {
 // Users live in the same KV namespace the old QR-code flow used for scan
 // sessions (that flow is gone, the binding wasn't doing anything else) —
 // keyed separately so the two never collide.
-type StoredUser = {
+export type StoredUser = {
   username: string;
   passwordHash: string;
   salt: string;
   createdAt: string;
   scanResult?: ScanStatus;
   skinTone?: string;
+  // The real front-facing capture photo (same base64 sent to 3DLOOK), kept
+  // so the 2D try-on generator (tryOn.ts) has something to feed it even
+  // after the person logs back in on a later visit — the in-memory
+  // frontImage React state from the capture flow doesn't survive that.
+  frontPhotoBase64?: string;
 };
 
 // Shared with the swatch picker on the avatar screen — kept as a fixed set
@@ -48,7 +55,7 @@ export const SKIN_TONE_PRESETS = [
   "#4a2c1a",
 ] as const;
 
-function userKey(username: string) {
+export function userKey(username: string) {
   return `user:${username}`;
 }
 
@@ -217,6 +224,27 @@ export const saveUserScanResult = createServerFn({ method: "POST" })
 
     const user = JSON.parse(raw) as StoredUser;
     user.scanResult = data.scanResult;
+    await kv.put(userKey(username), JSON.stringify(user));
+  });
+
+// Called once a scan finishes, alongside saveUserScanResult, so the 2D
+// try-on generator (tryOn.ts) has this person's real photo on hand even on
+// a later visit where the capture flow never ran again this session.
+export const saveUserFrontPhoto = createServerFn({ method: "POST" })
+  .validator((data: { frontImageBase64: string }) => data)
+  .handler(async ({ data }): Promise<void> => {
+    const session = await getSession<SessionData>(sessionConfig());
+    const username = session.data.username;
+    if (!username) throw new Error("Não autenticado.");
+
+    const kv = getCloudflareEnv()?.VCLOTHES_SCANS;
+    if (!kv) throw new Error("Armazenamento indisponível no servidor.");
+
+    const raw = await kv.get(userKey(username));
+    if (!raw) throw new Error("Usuário não encontrado.");
+
+    const user = JSON.parse(raw) as StoredUser;
+    user.frontPhotoBase64 = data.frontImageBase64;
     await kv.put(userKey(username), JSON.stringify(user));
   });
 
