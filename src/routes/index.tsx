@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Shirt, Sparkles, UserRound } from "lucide-react";
 
 import { AvatarViewer } from "@/components/AvatarViewer";
@@ -210,7 +210,14 @@ function Provador() {
   // Merges both measurement sources the same way the "result" step already
   // does when listing them out — chest/waist tend to live in volume_params,
   // neck/shoulders in front_params, so a size recommendation needs both.
-  const mergedMeasurements = { ...result?.volumeParams, ...result?.frontParams };
+  // Memoized because AvatarViewer's garment-loading effect depends on this
+  // object's identity — a fresh literal on every render (the previous
+  // code) restarted that effect continuously, cancelling the async GLB
+  // load before it ever completed.
+  const mergedMeasurements = useMemo(
+    () => ({ ...result?.volumeParams, ...result?.frontParams }),
+    [result?.volumeParams, result?.frontParams],
+  );
   const recommendedShirtSize = recommendShirtSize(mergedMeasurements);
   const userMeasurements = getUserMeasurements(mergedMeasurements);
   // Defaults to the recommendation until the person taps a size themselves.
@@ -955,8 +962,8 @@ function Provador() {
                 <div className="text-mono mb-2 mt-5 text-primary">Experimentar</div>
                 <h1 className="text-display text-4xl text-ink">{selectedProduct.name}</h1>
                 <p className="mt-3 text-muted-foreground">
-                  Uma forma simples ajustada às suas medidas — não é uma simulação real de tecido,
-                  mas gira junto com o avatar.
+                  Ajustado às suas medidas — sem simulação de tecido em tempo real, mas gira junto
+                  com o avatar.
                 </p>
 
                 <div className="mt-6">

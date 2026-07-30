@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { computeShirtFit } from "@/lib/garmentFit";
+import { computeGarmentScale, GARMENT_COLLAR_HEIGHT_FRACTION } from "@/lib/garmentFit";
 import { loadThree } from "@/lib/modelViewer";
 
 // Minimal structural type instead of importing Three.js's real types —
@@ -19,10 +19,12 @@ type SceneLike = { add: (obj: Object3DLike) => void; remove: (obj: Object3DLike)
 // public API docs, found by inspecting a real successful scan directly).
 // It has no texture/color baked in, so this gives it a flat color instead
 // of showing an untextured-white blob — `color` is how the skin tone
-// picker retints it. `showShirt` overlays a simple 3D "shirt shell" fitted
-// to `scanMeasurements` (see lib/garmentFit.ts) — not a real garment mesh
-// or cloth simulation, just a shape that roughly reads as "wearing a plain
-// t-shirt" and rotates with the body.
+// picker retints it. `showShirt` overlays a real garment mesh
+// (public/shirt.glb — a free CLO-simulated t-shirt asset, not something we
+// built or AI-generated) scaled to `scanMeasurements` (see
+// lib/garmentFit.ts) — no cloth simulation, the shape is fixed, but it's
+// real garment geometry rather than a hand-built shell, and it rotates
+// with the body.
 export function AvatarViewer({
   modelUrl,
   color = "#b7bcc4",
@@ -238,105 +240,68 @@ export function AvatarViewer({
     materialRef.current?.color.set(color);
   }, [color]);
 
-  // Builds the shirt shell once the body has loaded and `showShirt` is on.
-  // Runs on a short poll rather than a load-event, since the body finishes
-  // loading asynchronously inside the effect above and there's no signal
-  // exposed here for "body just became available" beyond the refs it sets.
+  // Loads the real garment asset once the body is ready and `showShirt` is
+  // on. Runs on a short poll rather than a load-event, since the body
+  // finishes loading asynchronously inside the effect above and there's no
+  // signal exposed here for "body just became available" beyond the refs
+  // it sets.
   useEffect(() => {
     if (!showShirt) return;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     const tryBuild = async () => {
       const scene = sceneRef.current;
       const body = bodyObjectRef.current;
       if (!scene || !body || !bodyTopYRef.current) {
-        if (!cancelled) requestAnimationFrame(() => void tryBuild());
+        // A setTimeout poll rather than requestAnimationFrame - rAF only
+        // fires while the tab is actively compositing frames, which a
+        // backgrounded/inactive tab can suspend indefinitely, silently
+        // stalling this retry forever.
+        if (!cancelled) retryTimer = setTimeout(() => void tryBuild(), 100);
         return;
       }
 
-      const fit = computeShirtFit(scanMeasurements, bodyTopYRef.current);
-      if (!fit) return;
+      const scaleFactor = computeGarmentScale(scanMeasurements);
+      if (scaleFactor == null) return;
 
-      const { THREE } = await loadThree();
+      const { THREE, GLTFLoader } = await loadThree();
       if (cancelled) return;
 
-      // A t-shirt sits a little outside the body, not skin-tight. Bumped up
-      // from 1.12 - at that padding the shirt surface sat close enough to
-      // the belly that the two z-fought (flickering, patchy gaps where the
-      // skin showed through instead of solid black).
-      const PAD = 1.25;
-      // Extra clearance right at the waist specifically, since that's
-      // where a fuller belly is most likely to push past a padding factor
-      // tuned against the chest/shoulders.
-      const WAIST_PAD_EXTRA = 1.08;
-      // A small collar taper above the shoulder line instead of cutting the
-      // torso off flat there - closes most of the bare-neck gap and reads
-      // as an actual crew-neck opening rather than a hard edge.
-      const collarY = fit.shoulderY + (fit.chestY - fit.hemY) * 0.08;
-      const collarRadius = fit.shoulderHalfWidthMm * 0.6;
-      const controlPoints = [
-        new THREE.Vector2(collarRadius, collarY),
-        new THREE.Vector2(fit.shoulderHalfWidthMm * PAD, fit.shoulderY),
-        new THREE.Vector2(fit.chestRadiusMm * PAD, fit.chestY),
-        new THREE.Vector2(fit.waistRadiusMm * PAD * WAIST_PAD_EXTRA, fit.waistY),
-        new THREE.Vector2(fit.hemRadiusMm * PAD, fit.hemY),
-      ];
-      // Only 5 hard corners reads as a stack of cones (visible creases at
-      // each landmark) rather than a body's actual smooth curve - running
-      // them through a spline and resampling densely gives a torso that
-      // curves continuously instead of faceting at every measurement point.
-      const profileCurve = new THREE.SplineCurve(controlPoints);
-      const points = profileCurve.getPoints(24);
-      const torsoGeo = new THREE.LatheGeometry(points, 32);
+      const gltf = await new Promise<{ scene: InstanceType<typeof THREE.Group> }>(
+        (resolve, reject) => {
+          new GLTFLoader().load("/shirt.glb", resolve, undefined, reject);
+        },
+      );
+      if (cancelled) return;
 
-      const shirtMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1a1a1a,
-        roughness: 0.75,
-        metalness: 0.02,
-        // LatheGeometry's winding leaves the outward-facing surface
-        // invisible under the default front-face-only culling — without
-        // this the whole shirt renders as empty space from outside the
-        // body.
-        side: THREE.DoubleSide,
-      });
+      const shirt = gltf.scene;
+      const box = new THREE.Box3().setFromObject(shirt);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      shirt.position.x -= center.x;
+      shirt.position.z -= center.z;
 
-      const torso = new THREE.Mesh(torsoGeo, shirtMaterial);
-      // Torsos read as oval (wider than deep), not perfectly round -
-      // flatten the lathe's circular cross-section toward a realistic
-      // depth:width ratio.
-      torso.scale.z = 0.72;
+      // Scale around the collar (the garment's own top point) rather than
+      // its geometric center, so the shoulders/neckline stay anchored to
+      // the avatar's own shoulder line and only the torso grows outward
+      // and down as the scale factor increases — scaling around the
+      // center would instead push the collar up past the neck for anyone
+      // bigger than the reference size.
+      const collarY = box.max.y;
+      shirt.scale.setScalar(scaleFactor);
+      shirt.position.y = collarY * (1 - scaleFactor);
 
       const shirtGroup = new THREE.Group();
-      shirtGroup.add(torso);
-
-      // Length must clearly exceed radius, or the cylinder reads as a flat
-      // disc/puck rather than a tube - which is what was happening: radius
-      // (0.45·PAD ≈ 0.56) was actually bigger than length (0.48), so even
-      // rotated near-vertical the short, wide shape looked like a flat
-      // wing instead of an arm.
-      const sleeveLength = fit.shoulderHalfWidthMm * 1.1;
-      const sleeveRadius = fit.shoulderHalfWidthMm * 0.32;
-      for (const side of [-1, 1]) {
-        // Capped (not open-ended) - an open tube showed its hollow inside
-        // surface at the cuff instead of looking like solid fabric.
-        const sleeveGeo = new THREE.CylinderGeometry(
-          sleeveRadius,
-          sleeveRadius * 1.08,
-          sleeveLength,
-          16,
-          1,
-          false,
-        );
-        const sleeve = new THREE.Mesh(sleeveGeo, shirtMaterial);
-        const shoulderX = side * fit.shoulderHalfWidthMm * PAD * 0.85;
-        sleeve.position.set(shoulderX, fit.shoulderY - sleeveLength * 0.45, 0);
-        // A cylinder's own axis already runs vertically (matching an arm
-        // hanging down) - this only needs a slight outward tilt, not a
-        // rotation toward horizontal. `Math.PI / 2 - 0.35` (~70°) tipped it
-        // almost flat, reading as a horizontal wing instead of a sleeve.
-        sleeve.rotation.z = side * 0.3;
-        shirtGroup.add(sleeve);
-      }
+      shirtGroup.add(shirt);
+      // Anchors the (now scale-compensated) collar point to this avatar's
+      // own shoulder line, proportional to its own height - the garment's
+      // native Y coordinates were authored for whatever reference body its
+      // creator simulated it on, not this specific avatar.
+      // The child's own position/scale (above) already keeps the collar
+      // point fixed at local Y=collarY within this group regardless of
+      // scaleFactor, so no extra scaling applies here.
+      shirtGroup.position.y = bodyTopYRef.current * GARMENT_COLLAR_HEIGHT_FRACTION - collarY;
 
       scene.add(shirtGroup as unknown as Object3DLike);
       shirtGroupRef.current = shirtGroup as unknown as Object3DLike;
@@ -346,14 +311,21 @@ export function AvatarViewer({
 
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
       const scene = sceneRef.current;
       const group = shirtGroupRef.current;
       if (scene && group) {
         scene.remove(group);
         group.traverse((child: unknown) => {
-          const mesh = child as { isMesh?: boolean; geometry?: { dispose: () => void } };
+          const mesh = child as {
+            isMesh?: boolean;
+            geometry?: { dispose: () => void };
+            material?: { map?: { dispose: () => void }; dispose: () => void };
+          };
           if (!mesh?.isMesh) return;
           mesh.geometry?.dispose?.();
+          mesh.material?.map?.dispose?.();
+          mesh.material?.dispose?.();
         });
       }
       shirtGroupRef.current = null;
