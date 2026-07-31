@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Shirt, Sparkles, UserRound } from "lucide-react";
 
 import { AvatarViewer } from "@/components/AvatarViewer";
-import { SmplPreview } from "@/components/SmplPreview";
 import { Button } from "@/components/ui/button";
 import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
@@ -777,23 +776,6 @@ function Provador() {
 
                 <div className="mt-6 flex justify-center">
                   <Button onClick={() => setStep("customize")}>Personalizar avatar</Button>
-                </div>
-
-                <div className="mt-10 border-t hairline pt-6">
-                  <div className="text-mono mb-2 text-primary">
-                    Teste — não é o pipeline real ainda
-                  </div>
-                  <h2 className="text-display text-2xl text-ink">Prévia com esqueleto (SMPL+D)</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Resultado de um ajuste feito uma vez, fora do site, a partir de um scan de teste
-                    — mostrado aqui só pra avaliar a qualidade visual. Essa versão tenta puxar a
-                    forma mais perto do scan real (barriga/volume), mas isso introduziu distorção
-                    visível nas mãos e pulsos — sabemos do problema, ainda não corrigido. Ainda não
-                    roda automaticamente pra cada escaneamento novo.
-                  </p>
-                  <div className="mt-4">
-                    <SmplPreview color={skinTone} />
-                  </div>
                 </div>
               </div>
             )}
