@@ -14,6 +14,7 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  resetPassword,
   saveAvatarSkinTone,
   saveUserScanResult,
   SKIN_TONE_PRESETS,
@@ -184,7 +185,7 @@ const SIDE_PHOTO_TIPS = [
 function Provador() {
   const [step, setStep] = useState<Step>("login");
   const [authChecked, setAuthChecked] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authMode, setAuthMode] = useState<"login" | "register" | "reset">("login");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
@@ -259,7 +260,7 @@ function Provador() {
     e.preventDefault();
     setAuthError("");
 
-    if (authMode === "register") {
+    if (authMode === "register" || authMode === "reset") {
       const passwordError = validatePassword(authPassword);
       if (passwordError) {
         setAuthError(passwordError);
@@ -269,8 +270,11 @@ function Provador() {
 
     setAuthLoading(true);
     try {
-      const submit = authMode === "login" ? loginUser : registerUser;
-      const user = await submit({ data: { username: authUsername, password: authPassword } });
+      const user = await (authMode === "login"
+        ? loginUser({ data: { username: authUsername, password: authPassword } })
+        : authMode === "register"
+          ? registerUser({ data: { username: authUsername, password: authPassword } })
+          : resetPassword({ data: { username: authUsername, newPassword: authPassword } }));
       if (user.scanResult) setResult(user.scanResult);
       if (user.skinTone) setSkinTone(user.skinTone);
       setStep(user.hasScan ? "shop" : "intro");
@@ -444,12 +448,18 @@ function Provador() {
               <div>
                 <div className="text-mono mb-2 text-primary">Bem-vindo</div>
                 <h1 className="text-display text-4xl text-ink">
-                  {authMode === "login" ? "Entrar" : "Criar conta"}
+                  {authMode === "login"
+                    ? "Entrar"
+                    : authMode === "register"
+                      ? "Criar conta"
+                      : "Redefinir senha"}
                 </h1>
                 <p className="mt-3 text-muted-foreground">
                   {authMode === "login"
                     ? "Entre para continuar de onde parou."
-                    : "Crie sua conta para começar a experimentar."}
+                    : authMode === "register"
+                      ? "Crie sua conta para começar a experimentar."
+                      : "Informe seu usuário e escolha uma senha nova."}
                 </p>
 
                 <form className="mt-8 flex flex-col gap-4" onSubmit={handleAuthSubmit}>
@@ -463,16 +473,18 @@ function Provador() {
                     />
                   </div>
                   <div>
-                    <Label className="mb-2 block">Senha</Label>
+                    <Label className="mb-2 block">
+                      {authMode === "reset" ? "Nova senha" : "Senha"}
+                    </Label>
                     <Input
                       type="password"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       autoComplete={authMode === "login" ? "current-password" : "new-password"}
-                      minLength={authMode === "register" ? 6 : undefined}
+                      minLength={authMode === "register" || authMode === "reset" ? 6 : undefined}
                       required
                     />
-                    {authMode === "register" && (
+                    {(authMode === "register" || authMode === "reset") && (
                       <p className="mt-2 text-xs text-muted-foreground">
                         Mínimo de 6 caracteres, com pelo menos um número. Caracteres especiais são
                         permitidos.
@@ -483,9 +495,31 @@ function Provador() {
                   {authError && <p className="text-sm text-destructive">{authError}</p>}
 
                   <Button type="submit" className="mt-2" disabled={authLoading}>
-                    {authLoading ? "Aguarde..." : authMode === "login" ? "Entrar" : "Criar conta"}
+                    {authLoading
+                      ? "Aguarde..."
+                      : authMode === "login"
+                        ? "Entrar"
+                        : authMode === "register"
+                          ? "Criar conta"
+                          : "Redefinir senha"}
                   </Button>
                 </form>
+
+                {authMode === "login" && (
+                  <p className="mt-4 text-center text-sm">
+                    <button
+                      type="button"
+                      className="text-primary hover:underline"
+                      onClick={() => {
+                        setAuthMode("reset");
+                        setAuthPassword("");
+                        setAuthError("");
+                      }}
+                    >
+                      Esqueceu a senha?
+                    </button>
+                  </p>
+                )}
 
                 <p className="mt-6 text-center text-sm text-muted-foreground">
                   {authMode === "login" ? (
@@ -510,6 +544,7 @@ function Provador() {
                         className="text-primary hover:underline"
                         onClick={() => {
                           setAuthMode("login");
+                          setAuthPassword("");
                           setAuthError("");
                         }}
                       >

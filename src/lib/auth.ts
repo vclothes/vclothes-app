@@ -176,6 +176,41 @@ export const loginUser = createServerFn({ method: "POST" })
     };
   });
 
+// No email is collected at signup, so there's nothing to verify possession
+// of before letting someone set a new password — this trusts the username
+// alone. Acceptable for a fair demo with no sensitive data (measurements and
+// a photo, no payment info), but it does mean anyone who knows/guesses a
+// username can take over that account. Logs the person in immediately after,
+// same as loginUser, since they've just proven (as much as this flow can)
+// that they're meant to have access.
+export const resetPassword = createServerFn({ method: "POST" })
+  .validator((data: { username: string; newPassword: string }) => data)
+  .handler(async ({ data }): Promise<AuthResult> => {
+    const username = normalizeUsername(data.username);
+    const passwordError = validatePassword(data.newPassword);
+    if (passwordError) throw new Error(passwordError);
+
+    const kv = getCloudflareEnv()?.VCLOTHES_SCANS;
+    if (!kv) throw new Error("Armazenamento indisponível no servidor.");
+
+    const raw = await kv.get(userKey(username));
+    if (!raw) throw new Error("Usuário não encontrado.");
+    const user = JSON.parse(raw) as StoredUser;
+
+    const salt = randomHex(16);
+    user.salt = salt;
+    user.passwordHash = await hashPassword(data.newPassword, salt);
+    await kv.put(userKey(username), JSON.stringify(user));
+
+    await updateSession<SessionData>(sessionConfig(), { username });
+    return {
+      username,
+      hasScan: !!user.scanResult,
+      scanResult: user.scanResult,
+      skinTone: user.skinTone,
+    };
+  });
+
 export const logoutUser = createServerFn({ method: "POST" }).handler(async (): Promise<void> => {
   await clearSession(sessionConfig());
 });
