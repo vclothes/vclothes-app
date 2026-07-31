@@ -783,11 +783,13 @@ function Provador() {
                   <div className="text-mono mb-2 text-primary">
                     Teste — não é o pipeline real ainda
                   </div>
-                  <h2 className="text-display text-2xl text-ink">Prévia com esqueleto (SMPL)</h2>
+                  <h2 className="text-display text-2xl text-ink">Prévia com esqueleto (SMPL+D)</h2>
                   <p className="mt-2 text-sm text-muted-foreground">
                     Resultado de um ajuste feito uma vez, fora do site, a partir de um scan de teste
-                    — mostrado aqui só pra avaliar a qualidade visual. Ainda não roda
-                    automaticamente pra cada escaneamento novo.
+                    — mostrado aqui só pra avaliar a qualidade visual. Essa versão tenta puxar a
+                    forma mais perto do scan real (barriga/volume), mas isso introduziu distorção
+                    visível nas mãos e pulsos — sabemos do problema, ainda não corrigido. Ainda não
+                    roda automaticamente pra cada escaneamento novo.
                   </p>
                   <div className="mt-4">
                     <SmplPreview color={skinTone} />
