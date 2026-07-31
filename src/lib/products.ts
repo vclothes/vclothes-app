@@ -7,20 +7,10 @@ export type Product = {
   id: string;
   name: string;
   image: string;
-  // Short English description of the garment, fed to the IDM-VTON try-on
-  // model (see tryOn.ts) alongside the product photo — it was trained on
-  // English captions, and this phrasing is the one validated end-to-end
-  // against the real model.
-  tryOnDescription: string;
 };
 
 export const PRODUCTS: Product[] = [
-  {
-    id: "camiseta-preta",
-    name: "Camiseta Preta Básica",
-    image: tshirtBlack,
-    tryOnDescription: "Black crew neck short sleeve t-shirt",
-  },
+  { id: "camiseta-preta", name: "Camiseta Preta Básica", image: tshirtBlack },
 ];
 
 // Size chart values are cm, as supplied by the team (matches the units

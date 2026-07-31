@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Shirt, Sparkles, UserRound } from "lucide-react";
 
 import { AvatarViewer } from "@/components/AvatarViewer";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { captureAvatarFrontPhoto } from "@/lib/avatarSnapshot";
 
 import {
   getCurrentUser,
@@ -14,12 +15,10 @@ import {
   logoutUser,
   registerUser,
   saveAvatarSkinTone,
-  saveUserFrontPhoto,
   saveUserScanResult,
   SKIN_TONE_PRESETS,
   validatePassword,
 } from "@/lib/auth";
-import { generateTryOn } from "@/lib/tryOn";
 import { isDisplayableMeasurement, MEASUREMENT_LABELS } from "@/lib/measurements";
 import {
   getUserMeasurements,
@@ -201,14 +200,12 @@ function Provador() {
   const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
   const [selectedShirtSize, setSelectedShirtSize] = useState<ShirtSize | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  // Keyed by productId — a client-side cache on top of the server's KV cache,
-  // so flipping back to a product already generated this session doesn't even
-  // need a round trip. tryOnErrors is separate from tryOnImages so a failed
-  // product doesn't get confused with one that's still loading (absent from
-  // both maps).
-  const [tryOnImages, setTryOnImages] = useState<Record<string, string>>({});
-  const [tryOnLoadingId, setTryOnLoadingId] = useState<string | null>(null);
-  const [tryOnErrors, setTryOnErrors] = useState<Record<string, string>>({});
+  // A static front-on snapshot of the 3D avatar (see lib/avatarSnapshot.ts),
+  // captured fresh each time the try_on step opens — not cached across
+  // products/visits, since it's cheap to regenerate (client-side render, no
+  // network call) and should always reflect the current skin tone.
+  const [avatarPhoto, setAvatarPhoto] = useState<string | null>(null);
+  const [avatarPhotoError, setAvatarPhotoError] = useState("");
 
   function handlePickSkinTone(tone: string | null) {
     setSkinTone(tone ?? undefined);
@@ -220,7 +217,14 @@ function Provador() {
   // Merges both measurement sources the same way the "result" step already
   // does when listing them out — chest/waist tend to live in volume_params,
   // neck/shoulders in front_params, so a size recommendation needs both.
-  const mergedMeasurements = { ...result?.volumeParams, ...result?.frontParams };
+  // Memoized because AvatarViewer's garment-loading effect depends on this
+  // object's identity — a fresh literal on every render (the previous
+  // code) restarted that effect continuously, cancelling the async GLB
+  // load before it ever completed.
+  const mergedMeasurements = useMemo(
+    () => ({ ...result?.volumeParams, ...result?.frontParams }),
+    [result?.volumeParams, result?.frontParams],
+  );
   const recommendedShirtSize = recommendShirtSize(mergedMeasurements);
   const userMeasurements = getUserMeasurements(mergedMeasurements);
   // Defaults to the recommendation until the person taps a size themselves.
@@ -333,9 +337,6 @@ function Provador() {
         saveUserScanResult({ data: { scanResult: scan } }).catch((saveErr) =>
           console.error("[Provador] failed to save scan result to account", saveErr),
         );
-        saveUserFrontPhoto({ data: { frontImageBase64: frontImage } }).catch((saveErr) =>
-          console.error("[Provador] failed to save front photo to account", saveErr),
-        );
       } catch (err) {
         if (cancelled) return;
         setErrorMessage(err instanceof Error ? err.message : "Algo deu errado. Tente novamente.");
@@ -349,44 +350,29 @@ function Provador() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  // Kicks off the 2D AI try-on generation (real photo + real garment photo,
-  // composed by IDM-VTON — see tryOn.ts) as soon as the try_on step opens for
-  // a product that hasn't already been generated (or failed) this session.
+  // Captures the front-on avatar snapshot (see lib/avatarSnapshot.ts) as
+  // soon as the try_on step opens, rather than keeping the interactive 3D
+  // viewer there — "Experimentar" shows a flat 2D photo of the avatar.
   useEffect(() => {
-    if (step !== "try_on" || !selectedProductId) return;
-    if (tryOnImages[selectedProductId] || tryOnErrors[selectedProductId]) return;
-    if (tryOnLoadingId === selectedProductId) return;
+    if (step !== "try_on") return;
+    if (!result?.modelUrl) return;
 
     let cancelled = false;
-    setTryOnLoadingId(selectedProductId);
-    generateTryOn({ data: { productId: selectedProductId } })
-      .then(({ imageDataUri }) => {
-        if (cancelled) return;
-        setTryOnImages((prev) => ({ ...prev, [selectedProductId]: imageDataUri }));
+    setAvatarPhoto(null);
+    setAvatarPhotoError("");
+    captureAvatarFrontPhoto(result.modelUrl, skinTone ?? "#b7bcc4")
+      .then((dataUrl) => {
+        if (!cancelled) setAvatarPhoto(dataUrl);
       })
       .catch((err) => {
-        if (cancelled) return;
-        setTryOnErrors((prev) => ({
-          ...prev,
-          [selectedProductId]:
-            err instanceof Error ? err.message : "Não foi possível gerar seu try-on.",
-        }));
-      })
-      .finally(() => {
-        if (!cancelled) setTryOnLoadingId(null);
+        console.error("[Provador] failed to capture avatar photo", err);
+        if (!cancelled) setAvatarPhotoError("Não conseguimos gerar a foto do avatar.");
       });
 
     return () => {
       cancelled = true;
     };
-    // tryOnLoadingId is intentionally excluded — this effect is what sets it,
-    // right before the async call starts. Including it would re-run this
-    // same effect the instant that state lands, tearing down (cancelled =
-    // true) the very request it just kicked off before it could ever
-    // resolve — confirmed live: the server call succeeded but the UI never
-    // left the loading state because of exactly this.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, selectedProductId, tryOnImages, tryOnErrors]);
+  }, [step, result?.modelUrl, skinTone]);
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -984,7 +970,7 @@ function Provador() {
 
                     <Button
                       className="mt-6 w-full"
-                      disabled={!result?.isSuccessful}
+                      disabled={!result?.modelUrl}
                       onClick={() => setStep("try_on")}
                     >
                       Experimentar
@@ -1006,41 +992,26 @@ function Provador() {
 
                 <div className="text-mono mb-2 mt-5 text-primary">Experimentar</div>
                 <h1 className="text-display text-4xl text-ink">{selectedProduct.name}</h1>
-                <p className="mt-3 text-muted-foreground">
-                  Sua foto real vestindo a peça, gerada por IA — não é um render 3D.
-                </p>
+                <p className="mt-3 text-muted-foreground">Foto de frente do seu avatar.</p>
 
                 <div className="mt-6">
-                  {tryOnImages[selectedProduct.id] ? (
+                  {!result?.modelUrl ? (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
+                    </div>
+                  ) : avatarPhoto ? (
                     <img
-                      src={tryOnImages[selectedProduct.id]}
-                      alt={`Você vestindo ${selectedProduct.name}`}
-                      className="w-full rounded-2xl border hairline object-cover"
+                      src={avatarPhoto}
+                      alt={`Seu avatar de frente, para experimentar ${selectedProduct.name}`}
+                      className="w-full rounded-2xl border hairline bg-secondary object-contain"
                     />
-                  ) : tryOnErrors[selectedProduct.id] ? (
-                    <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-4 rounded-2xl border hairline bg-secondary p-6 text-center">
-                      <p className="text-sm text-muted-foreground">
-                        {tryOnErrors[selectedProduct.id]}
-                      </p>
-                      <Button
-                        variant="outline"
-                        onClick={() =>
-                          setTryOnErrors((prev) => {
-                            const next = { ...prev };
-                            delete next[selectedProduct.id];
-                            return next;
-                          })
-                        }
-                      >
-                        Tentar novamente
-                      </Button>
+                  ) : avatarPhotoError ? (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      {avatarPhotoError}
                     </div>
                   ) : (
-                    <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-3 rounded-2xl border hairline bg-secondary p-6 text-center">
-                      <Sparkles className="h-6 w-6 animate-pulse text-primary" />
-                      <p className="text-sm text-muted-foreground">
-                        Gerando seu look... isso pode levar até 1 minuto.
-                      </p>
+                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
+                      Gerando a foto do avatar…
                     </div>
                   )}
                 </div>

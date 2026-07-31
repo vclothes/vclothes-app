@@ -13,8 +13,8 @@ type TintedMaterial = { color: { set: (value: string) => void } };
 // public API docs, found by inspecting a real successful scan directly).
 // It has no texture/color baked in, so this gives it a flat color instead
 // of showing an untextured-white blob — `color` is how the skin tone
-// picker retints it. Garment try-on is a separate, AI-generated 2D photo
-// (see lib/tryOn.ts) rather than anything overlaid on this 3D model.
+// picker retints it. Garment try-on is a separate 2D front-photo capture
+// (see lib/avatarSnapshot.ts) rather than anything overlaid on this 3D model.
 export function AvatarViewer({
   modelUrl,
   color = "#b7bcc4",
