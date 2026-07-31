@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { captureAvatarFrontPhoto } from "@/lib/avatarSnapshot";
 
 import {
   getCurrentUser,
@@ -201,12 +200,6 @@ function Provador() {
   const [skinTone, setSkinTone] = useState<string | undefined>(undefined);
   const [selectedShirtSize, setSelectedShirtSize] = useState<ShirtSize | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  // A static front-on snapshot of the 3D avatar (see lib/avatarSnapshot.ts),
-  // captured fresh each time the try_on step opens — not cached across
-  // products/visits, since it's cheap to regenerate (client-side render, no
-  // network call) and should always reflect the current skin tone.
-  const [avatarPhoto, setAvatarPhoto] = useState<string | null>(null);
-  const [avatarPhotoError, setAvatarPhotoError] = useState("");
 
   function handlePickSkinTone(tone: string | null) {
     setSkinTone(tone ?? undefined);
@@ -353,30 +346,6 @@ function Provador() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
-
-  // Captures the front-on avatar snapshot (see lib/avatarSnapshot.ts) as
-  // soon as the try_on step opens, rather than keeping the interactive 3D
-  // viewer there — "Experimentar" shows a flat 2D photo of the avatar.
-  useEffect(() => {
-    if (step !== "try_on") return;
-    if (!result?.modelUrl) return;
-
-    let cancelled = false;
-    setAvatarPhoto(null);
-    setAvatarPhotoError("");
-    captureAvatarFrontPhoto(result.modelUrl, skinTone ?? "#b7bcc4")
-      .then((dataUrl) => {
-        if (!cancelled) setAvatarPhoto(dataUrl);
-      })
-      .catch((err) => {
-        console.error("[Provador] failed to capture avatar photo", err);
-        if (!cancelled) setAvatarPhotoError("Não conseguimos gerar a foto do avatar.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [step, result?.modelUrl, skinTone]);
 
   const canContinueFromIntro =
     name.trim().length > 0 &&
@@ -1027,26 +996,14 @@ function Provador() {
 
                 <div className="text-mono mb-2 mt-5 text-primary">Experimentar</div>
                 <h1 className="text-display text-4xl text-ink">{selectedProduct.name}</h1>
-                <p className="mt-3 text-muted-foreground">Foto de frente do seu avatar.</p>
+                <p className="mt-3 text-muted-foreground">Seu avatar 3D — arraste para girar.</p>
 
                 <div className="mt-6">
-                  {!result?.modelUrl ? (
-                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
-                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
-                    </div>
-                  ) : avatarPhoto ? (
-                    <img
-                      src={avatarPhoto}
-                      alt={`Seu avatar de frente, para experimentar ${selectedProduct.name}`}
-                      className="w-full rounded-2xl border hairline bg-secondary object-contain"
-                    />
-                  ) : avatarPhotoError ? (
-                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
-                      {avatarPhotoError}
-                    </div>
+                  {result?.modelUrl ? (
+                    <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
                   ) : (
                     <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
-                      Gerando a foto do avatar…
+                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
                     </div>
                   )}
                 </div>
