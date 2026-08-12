@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Shirt, Sparkles, UserRound } from "lucide-react";
 
 import { AvatarViewer } from "@/components/AvatarViewer";
+import { RiggedPreview } from "@/components/RiggedPreview";
 import { Button } from "@/components/ui/button";
 import { GuidedCamera } from "@/components/GuidedCamera";
 import { Input } from "@/components/ui/input";
@@ -776,6 +777,19 @@ function Provador() {
 
                 <div className="mt-6 flex justify-center">
                   <Button onClick={() => setStep("customize")}>Personalizar avatar</Button>
+                </div>
+
+                <div className="mt-10 border-t hairline pt-8">
+                  <div className="text-mono mb-2 text-primary">Protótipo — rigging (RigNet)</div>
+                  <h2 className="text-display text-2xl text-ink">Esqueleto e pesos</h2>
+                  <p className="mt-3 text-muted-foreground">
+                    Teste com um scan fixo (não é o seu): esqueleto previsto pelo RigNet sobre a
+                    malha real, com um osso do braço animado pra mostrar que a malha se deforma
+                    junto.
+                  </p>
+                  <div className="mt-6">
+                    <RiggedPreview modelUrl="/rigged-preview.glb" />
+                  </div>
                 </div>
               </div>
             )}
