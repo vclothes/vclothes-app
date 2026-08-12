@@ -1010,12 +1010,12 @@ function Provador() {
                 <div className="text-mono mb-2 mt-5 text-primary">Experimentar</div>
                 <h1 className="text-display text-4xl text-ink">{selectedProduct.name}</h1>
                 <p className="mt-3 text-muted-foreground">
-                  Protótipo — esqueleto e pesos (RigNet) sobre um scan de teste. Arraste para
-                  girar.
+                  Protótipo — camisa ajustada ao corpo (scan de teste), esqueleto do RigNet por
+                  baixo. Arraste para girar.
                 </p>
 
                 <div className="mt-6">
-                  <RiggedPreview modelUrl="/rigged-preview.glb" />
+                  <RiggedPreview modelUrl="/rigged-preview.glb" garmentUrl="/shirt-fitted.glb" />
                 </div>
               </div>
             )}

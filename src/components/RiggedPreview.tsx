@@ -7,9 +7,21 @@ import { loadThree } from "@/lib/modelViewer";
 // a local Blender script that parses RigNet's rig.txt and exports a proper
 // armature). This is NOT wired to a live 3DLOOK scan yet — `modelUrl` points
 // at a fixed test file, same idea as AvatarViewer but proving the rig itself
-// works: the skeleton overlay is drawn on top, and one arm bone is animated
-// every frame to show the mesh actually deforms with the skeleton.
-export function RiggedPreview({ modelUrl }: { modelUrl: string }) {
+// works: the skeleton overlay is drawn on top.
+//
+// `garmentUrl`, if given, loads a second GLB (a garment already fit to this
+// same test body via the region-based scaling prototype — see
+// fit_shirt_regional.py) and places it using the exact same offset computed
+// for the body, since both were built from the same raw scan coordinates.
+// The garment is NOT skinned to the skeleton yet, so it won't follow any
+// future pose/animation — it's a static overlay for now.
+export function RiggedPreview({
+  modelUrl,
+  garmentUrl,
+}: {
+  modelUrl: string;
+  garmentUrl?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -92,6 +104,26 @@ export function RiggedPreview({ modelUrl }: { modelUrl: string }) {
 
             scene.add(object);
             setLoading(false);
+
+            if (garmentUrl) {
+              const garmentLoader = new GLTFLoader();
+              garmentLoader.load(
+                garmentUrl,
+                (garmentGltf: { scene: InstanceType<typeof THREE.Group> }) => {
+                  if (cancelled) return;
+                  const garment = garmentGltf.scene;
+                  // Same offset as the body — the fitted garment was built
+                  // from this same test scan's raw coordinates, so it lines
+                  // up without any extra transform.
+                  garment.position.copy(object.position);
+                  scene.add(garment);
+                },
+                undefined,
+                (err: unknown) => {
+                  console.error("[RiggedPreview] failed to load garment", err);
+                },
+              );
+            }
           },
           undefined,
           (err: unknown) => {
@@ -143,7 +175,7 @@ export function RiggedPreview({ modelUrl }: { modelUrl: string }) {
       cancelled = true;
       cleanup?.();
     };
-  }, [modelUrl]);
+  }, [modelUrl, garmentUrl]);
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-2xl border hairline bg-secondary">
