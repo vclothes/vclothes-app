@@ -1009,16 +1009,13 @@ function Provador() {
 
                 <div className="text-mono mb-2 mt-5 text-primary">Experimentar</div>
                 <h1 className="text-display text-4xl text-ink">{selectedProduct.name}</h1>
-                <p className="mt-3 text-muted-foreground">Seu avatar 3D — arraste para girar.</p>
+                <p className="mt-3 text-muted-foreground">
+                  Protótipo — esqueleto e pesos (RigNet) sobre um scan de teste. Arraste para
+                  girar.
+                </p>
 
                 <div className="mt-6">
-                  {result?.modelUrl ? (
-                    <AvatarViewer modelUrl={result.modelUrl} color={skinTone} />
-                  ) : (
-                    <div className="flex aspect-square w-full items-center justify-center rounded-2xl border hairline bg-secondary p-6 text-center text-sm text-muted-foreground">
-                      A 3DLOOK não devolveu um modelo 3D para esse escaneamento.
-                    </div>
-                  )}
+                  <RiggedPreview modelUrl="/rigged-preview.glb" />
                 </div>
               </div>
             )}
