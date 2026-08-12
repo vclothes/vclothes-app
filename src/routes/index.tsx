@@ -784,8 +784,7 @@ function Provador() {
                   <h2 className="text-display text-2xl text-ink">Esqueleto e pesos</h2>
                   <p className="mt-3 text-muted-foreground">
                     Teste com um scan fixo (não é o seu): esqueleto previsto pelo RigNet sobre a
-                    malha real, com um osso do braço animado pra mostrar que a malha se deforma
-                    junto.
+                    malha real.
                   </p>
                   <div className="mt-6">
                     <RiggedPreview modelUrl="/rigged-preview.glb" />

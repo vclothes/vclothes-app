@@ -49,7 +49,6 @@ export function RiggedPreview({ modelUrl }: { modelUrl: string }) {
         controls.enablePan = false;
 
         const loader = new GLTFLoader();
-        let armBone: InstanceType<typeof THREE.Bone> | null = null;
 
         loader.load(
           modelUrl,
@@ -87,15 +86,6 @@ export function RiggedPreview({ modelUrl }: { modelUrl: string }) {
             controls.target.set(0, targetY, 0);
             controls.update();
 
-            // Find the right-upper-arm bone (shoulder→elbow) predicted by
-            // RigNet, so we can animate it — the same bone used in the
-            // Blender pose test that proved the rig deforms correctly.
-            object.traverse((child: InstanceType<typeof THREE.Object3D>) => {
-              if ((child as InstanceType<typeof THREE.Bone>).isBone && child.name === "joint_22") {
-                armBone = child as InstanceType<typeof THREE.Bone>;
-              }
-            });
-
             const skeletonHelper = new THREE.SkeletonHelper(object);
             (skeletonHelper.material as InstanceType<typeof THREE.LineBasicMaterial>).linewidth = 2;
             scene.add(skeletonHelper);
@@ -114,17 +104,12 @@ export function RiggedPreview({ modelUrl }: { modelUrl: string }) {
         );
 
         let frameId: number;
-        function animate(time: number) {
+        function animate() {
           frameId = requestAnimationFrame(animate);
-          if (armBone) {
-            // Gentle wave: oscillate the upper-arm bone so the mesh visibly
-            // deforms with the skeleton instead of sitting in a static pose.
-            armBone.rotation.z = -0.35 + Math.sin(time / 900) * 0.35;
-          }
           controls.update();
           renderer.render(scene, camera);
         }
-        animate(0);
+        animate();
 
         function handleResize() {
           if (!container) return;
